@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +54,10 @@ fun PlayerScreen(
                     }
                 },
                 actions = {
+                    val isFavorite = viewModel.favorites.collectAsStateWithLifecycle().value.any { it.mediaUri == track?.uri }
+                    IconButton(onClick = { track?.let { viewModel.toggleFavorite(it.uri, isFavorite) } }) {
+                        Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = "Favorite")
+                    }
                     IconButton(onClick = { showLyrics = !showLyrics }) {
                         Icon(Icons.AutoMirrored.Filled.FormatAlignLeft, contentDescription = "Lyrics")
                     }

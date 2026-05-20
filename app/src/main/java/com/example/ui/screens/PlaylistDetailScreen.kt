@@ -67,7 +67,6 @@ fun PlaylistDetailScreen(
                             val track = allTracks.find { track -> track.uri == t.mediaUri }
                             if (track != null) {
                                 viewModel.playTrack(track)
-                                onNavigateToPlayer()
                             }
                         },
                         headlineContent = { Text(t.title) },

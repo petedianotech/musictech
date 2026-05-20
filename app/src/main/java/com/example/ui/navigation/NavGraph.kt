@@ -11,12 +11,15 @@ import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.PlayerScreen
 import com.example.ui.screens.EqualizerScreen
 import com.example.ui.screens.PlaylistDetailScreen
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.viewmodel.MusicViewModel
+import com.example.data.repository.SettingsRepository
 
 @Composable
 fun AppNavGraph(
     navController: NavHostController,
     viewModel: MusicViewModel,
+    settingsRepository: SettingsRepository,
     modifier: Modifier = Modifier
 ) {
     NavHost(
@@ -28,7 +31,14 @@ fun AppNavGraph(
             LibraryScreen(
                 viewModel = viewModel,
                 onNavigateToPlayer = { navController.navigate("player") },
-                onNavigateToPlaylist = { id -> navController.navigate("playlist/$id") }
+                onNavigateToPlaylist = { id -> navController.navigate("playlist/$id") },
+                onNavigateToSettings = { navController.navigate("settings") }
+            )
+        }
+        composable("settings") {
+            SettingsScreen(
+                settingsRepository = settingsRepository,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
         composable(

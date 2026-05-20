@@ -1,6 +1,11 @@
 package com.example
 
 import android.Manifest
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import com.example.data.repository.SettingsRepository
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -29,7 +34,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val context = this
+            val settingsRepository = remember { SettingsRepository(context) }
+            val themeMode by settingsRepository.themeMode.collectAsState(initial = 0)
+            
+            val darkTheme = when (themeMode) {
+                1 -> false
+                2 -> true
+                else -> isSystemInDarkTheme()
+            }
+
+            MyApplicationTheme(darkTheme = darkTheme) {
                 val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     listOf(
                         Manifest.permission.READ_MEDIA_AUDIO,
@@ -46,16 +61,19 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (permissionState.allPermissionsGranted) {
-                    val context = this
                     val database = MusicDatabase.getDatabase(context)
                     val repository = MediaRepository(context)
                     
                     val musicViewModel: MusicViewModel = viewModel(
-                        factory = MusicViewModelFactory(context, repository, database)
+                        factory = MusicViewModelFactory(context, repository, database, settingsRepository)
                     )
                     
                     val navController = rememberNavController()
-                    AppNavGraph(navController = navController, viewModel = musicViewModel)
+                    AppNavGraph(
+                        navController = navController,
+                        viewModel = musicViewModel,
+                        settingsRepository = settingsRepository
+                    )
                 } else {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("Permissions required to access music.")

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,13 +30,16 @@ import coil.request.ImageRequest
 import com.example.R
 import com.example.domain.AudioTrack
 import com.example.ui.viewmodel.MusicViewModel
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     viewModel: MusicViewModel,
     onNavigateToPlayer: () -> Unit,
-    onNavigateToPlaylist: (Int) -> Unit
+    onNavigateToPlaylist: (Int) -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     val tracks by viewModel.allTracks.collectAsStateWithLifecycle()
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
@@ -48,6 +52,9 @@ fun LibraryScreen(
             TopAppBar(
                 title = { Text("Musictech", fontWeight = FontWeight.Bold) },
                 actions = {
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
                     if (selectedTab == 0) {
                         var expanded by remember { mutableStateOf(false) }
                         IconButton(onClick = { viewModel.loadTracks() }) {
@@ -62,29 +69,28 @@ fun LibraryScreen(
                             DropdownMenuItem(text = { Text("Duration") }, onClick = { viewModel.setSortOrder(com.example.ui.viewmodel.SortOrder.DURATION); expanded = false })
                         }
                     }
-                    if (selectedTab == 1) {
+                    if (selectedTab == 2) {
                         IconButton(onClick = { showAddPlaylistDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = "Add Playlist")
                         }
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            val currentTrack by viewModel.currentPlayingTrack.collectAsStateWithLifecycle()
-            if (currentTrack != null) {
-                FloatingActionButton(onClick = onNavigateToPlayer) {
-                    Icon(Icons.Default.MusicNote, contentDescription = "Now Playing")
-                }
-            }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-            TabRow(selectedTabIndex = selectedTab) {
+        val currentTrack by viewModel.currentPlayingTrack.collectAsStateWithLifecycle()
+        val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+        
+        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize().padding(bottom = if (currentTrack != null) 72.dp else 0.dp)) {
+                TabRow(selectedTabIndex = selectedTab) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
                     Text("Tracks", modifier = Modifier.padding(16.dp))
                 }
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                    Text("Favorites", modifier = Modifier.padding(16.dp))
+                }
+                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
                     Text("Playlists", modifier = Modifier.padding(16.dp))
                 }
             }
@@ -99,7 +105,22 @@ fun LibraryScreen(
                         items(tracks) { track ->
                             TrackItem(track = track, onClick = {
                                 viewModel.playTrack(track)
-                                onNavigateToPlayer()
+                            })
+                        }
+                    }
+                }
+            } else if (selectedTab == 1) {
+                val dbFavorites by viewModel.favorites.collectAsStateWithLifecycle()
+                val favTracks = tracks.filter { t -> dbFavorites.any { it.mediaUri == t.uri } }
+                if (favTracks.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No favorites yet", style = MaterialTheme.typography.bodyLarge)
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(favTracks) { track ->
+                            TrackItem(track = track, onClick = {
+                                viewModel.tryPlayTrack(track.uri)
                             })
                         }
                     }
@@ -116,6 +137,17 @@ fun LibraryScreen(
                         )
                     }
                 }
+            }
+            } // close Column
+            
+            if (currentTrack != null) {
+                MiniPlayer(
+                    track = currentTrack!!,
+                    isPlaying = isPlaying,
+                    onPlayPause = { viewModel.togglePlayPause() },
+                    onClick = onNavigateToPlayer,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         }
     }
@@ -147,6 +179,53 @@ fun LibraryScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun MiniPlayer(
+    track: AudioTrack,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val albumArtUri = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), track.albumId)
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(albumArtUri)
+                    .error(R.drawable.img_album_placeholder_1779303397262) // fallback
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+            }
+            IconButton(onClick = onPlayPause) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = "Play/Pause"
+                )
+            }
+        }
     }
 }
 

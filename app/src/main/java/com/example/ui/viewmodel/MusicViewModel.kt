@@ -15,6 +15,8 @@ import com.example.data.db.MusicDatabase
 import com.example.data.db.Playlist
 import com.example.data.db.PlaylistTrack
 import com.example.data.db.TrackLyrics
+import com.example.data.db.FavoriteTrack
+import com.example.data.repository.SettingsRepository
 import com.example.data.repository.MediaRepository
 import com.example.domain.AudioTrack
 import com.example.playback.MusicPlaybackService
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -33,7 +36,8 @@ enum class SortOrder { TITLE, ARTIST, DURATION }
 class MusicViewModel(
     private val context: Context,
     private val mediaRepository: MediaRepository,
-    private val database: MusicDatabase
+    private val database: MusicDatabase,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private var mediaController: MediaController? = null
@@ -62,6 +66,9 @@ class MusicViewModel(
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
 
+    val favorites: StateFlow<List<FavoriteTrack>> = database.favoriteDao().getFavorites()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
 
@@ -69,9 +76,26 @@ class MusicViewModel(
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     init {
+        seedDefaultGenres()
         initializeController()
         loadTracks()
         startPositionUpdater()
+    }
+
+    private fun seedDefaultGenres() {
+        viewModelScope.launch {
+            try {
+                val playlists = database.playlistDao().getAllPlaylists().first()
+                if (playlists.isEmpty()) {
+                    val genres = listOf("Amapiano", "Afrobeats", "Pop", "Hip Hop", "R&B")
+                    genres.forEach {
+                        database.playlistDao().insertPlaylist(Playlist(name = it))
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun initializeController() {
@@ -89,6 +113,28 @@ class MusicViewModel(
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         updateCurrentTrack(mediaItem)
+                        mediaController?.let { controller ->
+                            val cfSec = settingsRepository.crossfadeDuration.value
+                            if (cfSec > 0) {
+                                isFadingOut = false
+                                isFadingIn = true
+                                controller.volume = 0f
+                                viewModelScope.launch {
+                                    val steps = 20
+                                    val stepTime = (cfSec * 1000L) / steps
+                                    var vol = 0f
+                                    for (i in 1..steps) {
+                                        vol += 1f / steps
+                                        controller.volume = minOf(1f, vol)
+                                        delay(stepTime)
+                                    }
+                                    controller.volume = 1f
+                                    isFadingIn = false
+                                }
+                            } else {
+                                controller.volume = 1f
+                            }
+                        }
                     }
 
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -120,12 +166,33 @@ class MusicViewModel(
         }
     }
 
+    private var isFadingOut = false
+    private var isFadingIn = false
+
     private fun startPositionUpdater() {
         viewModelScope.launch {
             while (true) {
-                mediaController?.let {
-                    if (it.isPlaying) {
-                        _currentPosition.value = it.currentPosition
+                mediaController?.let { controller ->
+                    if (controller.isPlaying) {
+                        _currentPosition.value = controller.currentPosition
+                        
+                        val cfSec = settingsRepository.crossfadeDuration.value
+                        if (cfSec > 0) {
+                            val remain = controller.duration - controller.currentPosition
+                            if (remain in 1..(cfSec * 1000L) && !isFadingOut) {
+                                isFadingOut = true
+                                viewModelScope.launch {
+                                    val steps = 20
+                                    val stepTime = remain / steps
+                                    var vol = 1f
+                                    for (i in 1..steps) {
+                                        vol -= 1f / steps
+                                        controller.volume = maxOf(0f, vol)
+                                        delay(stepTime)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 delay(1000L)
@@ -177,8 +244,41 @@ class MusicViewModel(
     }
 
     fun togglePlayPause() {
-        mediaController?.let {
-            if (it.isPlaying) it.pause() else it.play()
+        mediaController?.let { controller ->
+            if (controller.isPlaying) {
+                fadeOutAndPause(controller)
+            } else {
+                fadeInAndPlay(controller)
+            }
+        }
+    }
+
+    private fun fadeOutAndPause(controller: MediaController) {
+        viewModelScope.launch {
+            val originalVolume = controller.volume
+            var vol = originalVolume
+            while (vol > 0f) {
+                vol -= 0.1f
+                controller.volume = maxOf(0f, vol)
+                delay(50)
+            }
+            controller.pause()
+            controller.volume = originalVolume
+        }
+    }
+
+    private fun fadeInAndPlay(controller: MediaController) {
+        viewModelScope.launch {
+            val targetVolume = controller.volume
+            controller.volume = 0f
+            controller.play()
+            var vol = 0f
+            while (vol < targetVolume) {
+                vol += 0.1f
+                controller.volume = minOf(targetVolume, vol)
+                delay(50)
+            }
+            controller.volume = targetVolume
         }
     }
 
@@ -197,6 +297,16 @@ class MusicViewModel(
 
     fun setSortOrder(order: SortOrder) {
         _sortOrder.value = order
+    }
+
+    fun toggleFavorite(uri: String, isFav: Boolean) {
+        viewModelScope.launch {
+            if (isFav) {
+                database.favoriteDao().removeFavorite(uri)
+            } else {
+                database.favoriteDao().addFavorite(FavoriteTrack(uri))
+            }
+        }
     }
 
     fun toggleShuffleMode() {
@@ -265,12 +375,13 @@ class MusicViewModel(
 class MusicViewModelFactory(
     private val context: Context,
     private val repository: MediaRepository,
-    private val database: MusicDatabase
+    private val database: MusicDatabase,
+    private val settingsRepository: SettingsRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MusicViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return MusicViewModel(context, repository, database) as T
+            return MusicViewModel(context, repository, database, settingsRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
