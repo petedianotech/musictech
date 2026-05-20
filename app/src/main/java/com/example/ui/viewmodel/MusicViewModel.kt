@@ -46,12 +46,35 @@ class MusicViewModel(
     val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
 
     private val _allTracks = MutableStateFlow<List<AudioTrack>>(emptyList())
-    val allTracks: StateFlow<List<AudioTrack>> = combine(_allTracks, _sortOrder) { tracks, order ->
+    val customMetadata: StateFlow<List<com.example.data.db.CustomTrackMetadata>> = database.customMetadataDao().getAllMetadata()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val allTracks: StateFlow<List<AudioTrack>> = combine(
+        _allTracks, 
+        _sortOrder,
+        settingsRepository.minDurationAtLeast,
+        settingsRepository.hiddenTracks,
+        customMetadata
+    ) { tracks, order, minSec, hidden, metadataList ->
+        val metaMap = metadataList.associateBy { it.mediaUri }
+        var filtered = tracks.filter { it.duration >= minSec * 1000L && !hidden.contains(it.uri) }
+            .map { track ->
+                metaMap[track.uri]?.let { custom ->
+                    track.copy(
+                        title = custom.title,
+                        artist = custom.artist,
+                        album = custom.album,
+                        customArtUri = custom.coverArtUri
+                    )
+                } ?: track
+            }
+        
         when (order) {
-            SortOrder.TITLE -> tracks.sortedBy { it.title.lowercase() }
-            SortOrder.ARTIST -> tracks.sortedBy { it.artist.lowercase() }
-            SortOrder.DURATION -> tracks.sortedByDescending { it.duration }
+            SortOrder.TITLE -> filtered = filtered.sortedBy { it.title.lowercase() }
+            SortOrder.ARTIST -> filtered = filtered.sortedBy { it.artist.lowercase() }
+            SortOrder.DURATION -> filtered = filtered.sortedByDescending { it.duration }
         }
+        filtered
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val _currentPlayingTrack = MutableStateFlow<AudioTrack?>(null)
@@ -65,6 +88,13 @@ class MusicViewModel(
 
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
+
+    private val _volume = MutableStateFlow(1f)
+    val volume: StateFlow<Float> = _volume.asStateFlow()
+
+    private val _sleepTimerRemaining = MutableStateFlow(0)
+    val sleepTimerRemaining: StateFlow<Int> = _sleepTimerRemaining.asStateFlow()
+    private var sleepTimerJob: kotlinx.coroutines.Job? = null
 
     val favorites: StateFlow<List<FavoriteTrack>> = database.favoriteDao().getFavorites()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -80,6 +110,23 @@ class MusicViewModel(
         initializeController()
         loadTracks()
         startPositionUpdater()
+        setupHeadsetReceiver()
+    }
+
+    private fun setupHeadsetReceiver() {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(curContext: android.content.Context?, intent: android.content.Intent?) {
+                if (intent?.action == android.content.Intent.ACTION_HEADSET_PLUG) {
+                    val state = intent.getIntExtra("state", -1)
+                    if (state == 1 && settingsRepository.playOnHeadsetConnect.value) {
+                        mediaController?.play()
+                    } else if (state == 0 && settingsRepository.pauseOnHeadsetDisconnect.value) {
+                        mediaController?.pause()
+                    }
+                }
+            }
+        }
+        context.applicationContext.registerReceiver(receiver, android.content.IntentFilter(android.content.Intent.ACTION_HEADSET_PLUG))
     }
 
     private fun seedDefaultGenres() {
@@ -222,6 +269,44 @@ class MusicViewModel(
         }
     }
 
+    fun playNext(track: AudioTrack) {
+        mediaController?.let { controller ->
+            val mediaItem = MediaItem.Builder()
+                .setMediaId(track.uri)
+                .setUri(track.uri)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(track.title)
+                        .setArtist(track.artist)
+                        .setAlbumTitle(track.album)
+                        .setArtworkUri(if (track.customArtUri != null) android.net.Uri.parse(track.customArtUri) else android.content.ContentUris.withAppendedId(android.net.Uri.parse("content://media/external/audio/albumart"), track.albumId))
+                        .build()
+                )
+                .build()
+            val nextIndex = if (controller.mediaItemCount > 0) controller.currentMediaItemIndex + 1 else 0
+            controller.addMediaItem(nextIndex, mediaItem)
+        }
+    }
+
+    fun setVolume(vol: Float) {
+        _volume.value = vol
+        mediaController?.volume = vol
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        _sleepTimerRemaining.value = minutes
+        if (minutes > 0) {
+            sleepTimerJob = viewModelScope.launch {
+                while (_sleepTimerRemaining.value > 0) {
+                    kotlinx.coroutines.delay(60 * 1000L)
+                    _sleepTimerRemaining.value -= 1
+                }
+                mediaController?.let { fadeOutAndPause(it) }
+            }
+        }
+    }
+
     fun playTrackList(tracks: List<AudioTrack>, startIndex: Int = 0) {
         mediaController?.let { controller ->
             val mediaItems = tracks.map { track ->
@@ -233,6 +318,7 @@ class MusicViewModel(
                             .setTitle(track.title)
                             .setArtist(track.artist)
                             .setAlbumTitle(track.album)
+                            .setArtworkUri(if (track.customArtUri != null) android.net.Uri.parse(track.customArtUri) else android.content.ContentUris.withAppendedId(android.net.Uri.parse("content://media/external/audio/albumart"), track.albumId))
                             .build()
                     )
                     .build()
@@ -370,6 +456,26 @@ class MusicViewModel(
     }
     
     fun getPlaylistTracks(playlistId: Int) = database.playlistDao().getTracksForPlaylist(playlistId)
+
+    fun toggleHiddenTrack(uri: String) {
+        viewModelScope.launch {
+            settingsRepository.toggleHiddenTrack(uri)
+        }
+    }
+
+    fun saveTrackMetadata(uri: String, title: String, artist: String, album: String, coverArtUri: String? = null) {
+        viewModelScope.launch {
+            database.customMetadataDao().saveMetadata(
+                com.example.data.db.CustomTrackMetadata(
+                    mediaUri = uri,
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    coverArtUri = coverArtUri
+                )
+            )
+        }
+    }
 }
 
 class MusicViewModelFactory(

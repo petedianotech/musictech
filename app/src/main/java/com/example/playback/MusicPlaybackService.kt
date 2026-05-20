@@ -44,6 +44,12 @@ class MusicPlaybackService : MediaLibraryService() {
         mediaLibrarySession = MediaLibrarySession.Builder(this, exoPlayer!!, Callback())
             .setSessionActivity(pendingIntent)
             .build()
+            
+        // ensure default app icon or notification logo is pulled correctly
+        setMediaNotificationProvider(
+            androidx.media3.session.DefaultMediaNotificationProvider.Builder(this)
+                .build()
+        )
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {

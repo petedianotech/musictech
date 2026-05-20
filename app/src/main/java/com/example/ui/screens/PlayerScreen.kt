@@ -4,6 +4,8 @@ import android.content.ContentUris
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -115,14 +117,53 @@ fun PlayerScreen(
                                 )
                             } else {
                                 val displayLyrics = if (lyricsText.isNullOrBlank()) "♪\n(No lyrics found. Tap edit to add)\n\nEnjoy the music..." else lyricsText!!
-                                LazyColumn(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                    item {
-                                        Text(
-                                            text = displayLyrics,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            textAlign = TextAlign.Center,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                
+                                val lrcRegex = Regex("\\[(\\d{2}):(\\d{2})\\.(\\d{2})\\](.*)")
+                                val lines = displayLyrics.split("\n")
+                                val parsedLines = lines.mapNotNull { line ->
+                                    val match = lrcRegex.find(line)
+                                    if (match != null) {
+                                        val m = match.groupValues[1].toLong()
+                                        val s = match.groupValues[2].toLong()
+                                        val ms = match.groupValues[3].toLong()
+                                        val totalMs = (m * 60 + s) * 1000 + ms * 10
+                                        totalMs to match.groupValues[4]
+                                    } else null
+                                }
+
+                                if (parsedLines.isNotEmpty()) {
+                                    val currentLineIndex = parsedLines.indexOfLast { it.first <= position }.coerceAtLeast(0)
+                                    val scrollState = androidx.compose.foundation.lazy.rememberLazyListState()
+                                    
+                                    LaunchedEffect(currentLineIndex) {
+                                        if (currentLineIndex >= 0) {
+                                            scrollState.animateScrollToItem(currentLineIndex)
+                                        }
+                                    }
+
+                                    LazyColumn(modifier = Modifier.fillMaxSize(), state = scrollState, horizontalAlignment = Alignment.CenterHorizontally) {
+                                        itemsIndexed(parsedLines) { index, (time, text) ->
+                                            val isCurrent = index == currentLineIndex
+                                            Text(
+                                                text = text.ifBlank { "♪" },
+                                                style = if (isCurrent) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                textAlign = TextAlign.Center,
+                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(vertical = 8.dp)
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    LazyColumn(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                        item {
+                                            Text(
+                                                text = displayLyrics,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                textAlign = TextAlign.Center,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 }
                             }

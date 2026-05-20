@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import com.example.domain.AudioTrack
 import com.example.ui.viewmodel.MusicViewModel
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.MoreVert
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +58,21 @@ fun LibraryScreen(
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                     if (selectedTab == 0) {
+                        val sleepTimer by viewModel.sleepTimerRemaining.collectAsStateWithLifecycle()
+                        if (sleepTimer > 0) {
+                            Text("${sleepTimer}m", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp).align(Alignment.CenterVertically))
+                        } else {
+                            var showSleepMenu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { showSleepMenu = true }) {
+                                Icon(Icons.Default.Timer, contentDescription = "Sleep Timer")
+                            }
+                            DropdownMenu(expanded = showSleepMenu, onDismissRequest = { showSleepMenu = false }) {
+                                listOf(15, 30, 45, 60).forEach { mins ->
+                                    DropdownMenuItem(text = { Text("$mins minutes") }, onClick = { viewModel.setSleepTimer(mins); showSleepMenu = false })
+                                }
+                            }
+                        }
+
                         var expanded by remember { mutableStateOf(false) }
                         IconButton(onClick = { viewModel.loadTracks() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Scan Music")
@@ -82,6 +99,10 @@ fun LibraryScreen(
         val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
         
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            var trackToEdit by remember { mutableStateOf<AudioTrack?>(null) }
+            val coroutineScope = rememberCoroutineScope()
+            val context = LocalContext.current
+            
             Column(modifier = Modifier.fillMaxSize().padding(bottom = if (currentTrack != null) 72.dp else 0.dp)) {
                 TabRow(selectedTabIndex = selectedTab) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
@@ -105,7 +126,10 @@ fun LibraryScreen(
                         items(tracks) { track ->
                             TrackItem(track = track, onClick = {
                                 viewModel.playTrack(track)
-                            })
+                            }, onHide = {
+                                viewModel.toggleHiddenTrack(track.uri)
+                            }, onEdit = { trackToEdit = track },
+                            onPlayNext = { viewModel.playNext(track) })
                         }
                     }
                 }
@@ -121,7 +145,10 @@ fun LibraryScreen(
                         items(favTracks) { track ->
                             TrackItem(track = track, onClick = {
                                 viewModel.tryPlayTrack(track.uri)
-                            })
+                            }, onHide = {
+                                viewModel.toggleHiddenTrack(track.uri)
+                            }, onEdit = { trackToEdit = track },
+                            onPlayNext = { viewModel.playNext(track) })
                         }
                     }
                 }
@@ -147,6 +174,36 @@ fun LibraryScreen(
                     onPlayPause = { viewModel.togglePlayPause() },
                     onClick = onNavigateToPlayer,
                     modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+            
+            trackToEdit?.let { track ->
+                var title by remember { mutableStateOf(track.title) }
+                var artist by remember { mutableStateOf(track.artist) }
+                var album by remember { mutableStateOf(track.album) }
+                var coverUri by remember { mutableStateOf(track.customArtUri ?: "") }
+                
+                AlertDialog(
+                    onDismissRequest = { trackToEdit = null },
+                    title = { Text("Edit Metadata") },
+                    text = {
+                        Column {
+                            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, singleLine = true)
+                            OutlinedTextField(value = artist, onValueChange = { artist = it }, label = { Text("Artist") }, singleLine = true)
+                            OutlinedTextField(value = album, onValueChange = { album = it }, label = { Text("Album") }, singleLine = true)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.saveTrackMetadata(track.uri, title, artist, album, if (coverUri.isNotBlank()) coverUri else null)
+                            trackToEdit = null
+                        }) {
+                            Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { trackToEdit = null }) { Text("Cancel") }
+                    }
                 )
             }
         }
@@ -230,9 +287,10 @@ fun MiniPlayer(
 }
 
 @Composable
-fun TrackItem(track: AudioTrack, onClick: () -> Unit) {
+fun TrackItem(track: AudioTrack, onClick: () -> Unit, onHide: () -> Unit = {}, onEdit: () -> Unit = {}, onPlayNext: () -> Unit = {}) {
     val context = LocalContext.current
-    val albumArtUri = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), track.albumId)
+    val albumArtUri = if (track.customArtUri != null) Uri.parse(track.customArtUri) else ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), track.albumId)
+    var expanded by remember { mutableStateOf(false) }
     
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
@@ -255,6 +313,18 @@ fun TrackItem(track: AudioTrack, onClick: () -> Unit) {
                     .size(48.dp)
                     .clip(RoundedCornerShape(8.dp))
             )
+        },
+        trailingContent = {
+            Box {
+                IconButton(onClick = { expanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenuItem(text = { Text("Play next") }, onClick = { expanded = false; onPlayNext() })
+                    DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { expanded = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Hide track") }, onClick = { expanded = false; onHide() })
+                }
+            }
         }
     )
 }

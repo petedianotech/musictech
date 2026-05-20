@@ -7,5 +7,6 @@ data class AudioTrack(
     val artist: String,
     val album: String,
     val albumId: Long,
-    val duration: Long
+    val duration: Long,
+    val customArtUri: String? = null
 )

@@ -95,6 +95,76 @@ fun SettingsScreen(
                     modifier = Modifier.width(180.dp)
                 )
             }
+
+            Text(
+                text = "Library Preferences",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp)
+            )
+            val minDuration by settingsRepository.minDurationAtLeast.collectAsStateWithLifecycle()
+            val hiddenTracks by settingsRepository.hiddenTracks.collectAsStateWithLifecycle()
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(if (minDuration > 0) "Hide shorter than $minDuration s" else "Show all tracks")
+                Slider(
+                    value = minDuration.toFloat(),
+                    onValueChange = { settingsRepository.setMinDuration(it.toInt()) },
+                    valueRange = 0f..120f,
+                    steps = 119,
+                    modifier = Modifier.width(180.dp)
+                )
+            }
+            if (hiddenTracks.isNotEmpty()) {
+                TextButton(
+                    onClick = { hiddenTracks.forEach { settingsRepository.toggleHiddenTrack(it) } },
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                ) {
+                    Text("Clear ${hiddenTracks.size} hidden tracks")
+                }
+            }
+
+            Text(
+                text = "Headset & Visuals",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp)
+            )
+
+            val playOnHeadset by settingsRepository.playOnHeadsetConnect.collectAsStateWithLifecycle()
+            val pauseOnHeadset by settingsRepository.pauseOnHeadsetDisconnect.collectAsStateWithLifecycle()
+            val spectrum by settingsRepository.spectrumStyle.collectAsStateWithLifecycle()
+
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Play on headset connect")
+                Switch(checked = playOnHeadset, onCheckedChange = { settingsRepository.setPlayOnHeadsetConnect(it) })
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Pause on headset disconnect")
+                Switch(checked = pauseOnHeadset, onCheckedChange = { settingsRepository.setPauseOnHeadsetDisconnect(it) })
+            }
+
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Spectrum Style", modifier = Modifier.weight(1f))
+                val spectrumOptions = listOf("Random Rotating", "Bars", "Waveform", "Circular", "Pulsating", "Particles")
+                var expandedSpectrum by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { expandedSpectrum = true }) {
+                        Text(spectrumOptions[spectrum])
+                    }
+                    DropdownMenu(expanded = expandedSpectrum, onDismissRequest = { expandedSpectrum = false }) {
+                        spectrumOptions.forEachIndexed { index, name ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = { settingsRepository.setSpectrumStyle(index); expandedSpectrum = false })
+                        }
+                    }
+                }
+            }
             
             Text(
                 text = "Equalizer",
