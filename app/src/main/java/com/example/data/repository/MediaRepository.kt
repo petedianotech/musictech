@@ -24,7 +24,7 @@ class MediaRepository(private val context: Context) {
             MediaStore.Audio.Media.IS_MUSIC
         )
 
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 30000" // greater than 30s
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
         context.contentResolver.query(

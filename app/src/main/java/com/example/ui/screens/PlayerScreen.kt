@@ -4,9 +4,11 @@ import android.content.ContentUris
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,7 +54,7 @@ fun PlayerScreen(
                 },
                 actions = {
                     IconButton(onClick = { showLyrics = !showLyrics }) {
-                        Icon(Icons.Default.FormatAlignLeft, contentDescription = "Lyrics")
+                        Icon(Icons.AutoMirrored.Filled.FormatAlignLeft, contentDescription = "Lyrics")
                     }
                     IconButton(onClick = onNavigateToEqualizer) {
                         Icon(Icons.Default.GraphicEq, contentDescription = "Equalizer")
@@ -76,20 +78,50 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 if (showLyrics) {
+                    val lyricsText by viewModel.getLyrics(t.uri).collectAsStateWithLifecycle(initialValue = null)
+                    var isEditing by remember { mutableStateOf(false) }
+                    var editText by remember(lyricsText, isEditing) { mutableStateOf(lyricsText ?: "") }
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(16.dp)
                     ) {
-                        Text(
-                            text = "♪\n(Lyrics not embedded in local file)\n\nEnjoy the music...",
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Lyrics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                IconButton(onClick = {
+                                    if (isEditing) {
+                                        viewModel.saveLyrics(t.uri, editText)
+                                    }
+                                    isEditing = !isEditing
+                                }) {
+                                    Icon(if(isEditing) Icons.Default.Check else Icons.Default.Edit, "Edit")
+                                }
+                            }
+                            if (isEditing) {
+                                OutlinedTextField(
+                                    value = editText,
+                                    onValueChange = { editText = it },
+                                    modifier = Modifier.fillMaxSize(),
+                                    placeholder = { Text("Enter lyrics here...") }
+                                )
+                            } else {
+                                val displayLyrics = if (lyricsText.isNullOrBlank()) "♪\n(No lyrics found. Tap edit to add)\n\nEnjoy the music..." else lyricsText!!
+                                LazyColumn(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    item {
+                                        Text(
+                                            text = displayLyrics,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            textAlign = TextAlign.Center,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 } else {
                     // Album Art
@@ -150,11 +182,17 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.height(32.dp))
                 
                 // Controls
+                val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsStateWithLifecycle()
+                val repeatMode by viewModel.repeatMode.collectAsStateWithLifecycle()
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(onClick = viewModel::toggleShuffleMode, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = if (shuffleModeEnabled) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                    }
                     IconButton(onClick = viewModel::skipToPrevious, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(36.dp))
                     }
@@ -174,6 +212,13 @@ fun PlayerScreen(
                     
                     IconButton(onClick = viewModel::skipToNext, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(36.dp))
+                    }
+                    IconButton(onClick = viewModel::cycleRepeatMode, modifier = Modifier.size(48.dp)) {
+                        val icon = when(repeatMode) {
+                            androidx.media3.common.Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+                            else -> Icons.Default.Repeat
+                        }
+                        Icon(icon, contentDescription = "Repeat", tint = if (repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else LocalContentColor.current)
                     }
                 }
             }

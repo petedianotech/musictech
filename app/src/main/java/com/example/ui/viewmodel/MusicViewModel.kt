@@ -14,16 +14,21 @@ import androidx.media3.session.SessionToken
 import com.example.data.db.MusicDatabase
 import com.example.data.db.Playlist
 import com.example.data.db.PlaylistTrack
+import com.example.data.db.TrackLyrics
 import com.example.data.repository.MediaRepository
 import com.example.domain.AudioTrack
 import com.example.playback.MusicPlaybackService
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+enum class SortOrder { TITLE, ARTIST, DURATION }
 
 class MusicViewModel(
     private val context: Context,
@@ -33,14 +38,29 @@ class MusicViewModel(
 
     private var mediaController: MediaController? = null
 
+    private val _sortOrder = MutableStateFlow(SortOrder.TITLE)
+    val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
+
     private val _allTracks = MutableStateFlow<List<AudioTrack>>(emptyList())
-    val allTracks: StateFlow<List<AudioTrack>> = _allTracks.asStateFlow()
+    val allTracks: StateFlow<List<AudioTrack>> = combine(_allTracks, _sortOrder) { tracks, order ->
+        when (order) {
+            SortOrder.TITLE -> tracks.sortedBy { it.title.lowercase() }
+            SortOrder.ARTIST -> tracks.sortedBy { it.artist.lowercase() }
+            SortOrder.DURATION -> tracks.sortedByDescending { it.duration }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val _currentPlayingTrack = MutableStateFlow<AudioTrack?>(null)
     val currentPlayingTrack: StateFlow<AudioTrack?> = _currentPlayingTrack.asStateFlow()
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    private val _shuffleModeEnabled = MutableStateFlow(false)
+    val shuffleModeEnabled: StateFlow<Boolean> = _shuffleModeEnabled.asStateFlow()
+
+    private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
 
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
@@ -70,9 +90,19 @@ class MusicViewModel(
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         updateCurrentTrack(mediaItem)
                     }
+
+                    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                        _shuffleModeEnabled.value = shuffleModeEnabled
+                    }
+
+                    override fun onRepeatModeChanged(repeatMode: Int) {
+                        _repeatMode.value = repeatMode
+                    }
                 })
                 // initial fetch
                 _isPlaying.value = controller.isPlaying
+                _shuffleModeEnabled.value = controller.shuffleModeEnabled
+                _repeatMode.value = controller.repeatMode
                 updateCurrentTrack(controller.currentMediaItem)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -109,10 +139,19 @@ class MusicViewModel(
         }
     }
 
+    fun tryPlayTrack(trackUri: String) {
+        val tracks = allTracks.value
+        val index = tracks.indexOfFirst { it.uri == trackUri }
+        if (index != -1) {
+            playTrackList(tracks, index)
+        }
+    }
+
     fun playTrack(track: AudioTrack) {
-        val trackIndex = _allTracks.value.indexOf(track)
+        val tracks = allTracks.value
+        val trackIndex = tracks.indexOf(track)
         if (trackIndex != -1) {
-            playTrackList(_allTracks.value, trackIndex)
+            playTrackList(tracks, trackIndex)
         }
     }
 
@@ -154,6 +193,34 @@ class MusicViewModel(
     fun seekTo(positionMs: Long) {
         mediaController?.seekTo(positionMs)
         _currentPosition.value = positionMs
+    }
+
+    fun setSortOrder(order: SortOrder) {
+        _sortOrder.value = order
+    }
+
+    fun toggleShuffleMode() {
+        mediaController?.let {
+            it.shuffleModeEnabled = !it.shuffleModeEnabled
+        }
+    }
+
+    fun cycleRepeatMode() {
+        mediaController?.let {
+            it.repeatMode = when (it.repeatMode) {
+                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                else -> Player.REPEAT_MODE_OFF
+            }
+        }
+    }
+
+    fun getLyrics(uri: String): Flow<String?> = database.trackLyricsDao().getLyrics(uri)
+
+    fun saveLyrics(uri: String, lyrics: String) {
+        viewModelScope.launch {
+            database.trackLyricsDao().saveLyrics(TrackLyrics(uri, lyrics))
+        }
     }
 
     // Playlist Operations

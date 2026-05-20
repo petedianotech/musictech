@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +48,20 @@ fun LibraryScreen(
             TopAppBar(
                 title = { Text("Musictech", fontWeight = FontWeight.Bold) },
                 actions = {
+                    if (selectedTab == 0) {
+                        var expanded by remember { mutableStateOf(false) }
+                        IconButton(onClick = { viewModel.loadTracks() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Scan Music")
+                        }
+                        IconButton(onClick = { expanded = true }) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort")
+                        }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            DropdownMenuItem(text = { Text("Title") }, onClick = { viewModel.setSortOrder(com.example.ui.viewmodel.SortOrder.TITLE); expanded = false })
+                            DropdownMenuItem(text = { Text("Artist") }, onClick = { viewModel.setSortOrder(com.example.ui.viewmodel.SortOrder.ARTIST); expanded = false })
+                            DropdownMenuItem(text = { Text("Duration") }, onClick = { viewModel.setSortOrder(com.example.ui.viewmodel.SortOrder.DURATION); expanded = false })
+                        }
+                    }
                     if (selectedTab == 1) {
                         IconButton(onClick = { showAddPlaylistDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = "Add Playlist")
