@@ -1,0 +1,6 @@
+{
+  "name": "Musictech",
+  "description": "A powerful production ready music player app with playlist management and offline playback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
