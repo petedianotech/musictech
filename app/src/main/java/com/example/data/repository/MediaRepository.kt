@@ -66,4 +66,48 @@ class MediaRepository(private val context: Context) {
         }
         audioList
     }
+
+    suspend fun getAllVideoFiles(): List<com.example.domain.VideoTrack> = withContext(Dispatchers.IO) {
+        val videoList = mutableListOf<com.example.domain.VideoTrack>()
+        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.TITLE,
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.SIZE
+        )
+        val sortOrder = "${MediaStore.Video.Media.DATE_ADDED} DESC"
+
+        context.contentResolver.query(
+            collection,
+            projection,
+            null,
+            null,
+            sortOrder
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+            val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+            val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idColumn)
+                val title = cursor.getString(titleColumn) ?: "Unknown Date"
+                val duration = cursor.getLong(durationColumn)
+                val size = cursor.getLong(sizeColumn)
+                val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+
+                videoList.add(
+                    com.example.domain.VideoTrack(
+                        id = id,
+                        uri = contentUri.toString(),
+                        title = title,
+                        duration = duration,
+                        size = size
+                    )
+                )
+            }
+        }
+        videoList
+    }
 }

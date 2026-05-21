@@ -37,6 +37,27 @@ class MainActivity : ComponentActivity() {
             val context = this
             val settingsRepository = remember { SettingsRepository(context) }
             val themeMode by settingsRepository.themeMode.collectAsState(initial = 0)
+            val showLockscreenArt by settingsRepository.showLockscreenArt.collectAsState(initial = true)
+
+            LaunchedEffect(showLockscreenArt) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setShowWhenLocked(showLockscreenArt)
+                    setTurnScreenOn(showLockscreenArt)
+                } else {
+                    @Suppress("DEPRECATION")
+                    if (showLockscreenArt) {
+                        window.addFlags(
+                            android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                            android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                        )
+                    } else {
+                        window.clearFlags(
+                            android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                            android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                        )
+                    }
+                }
+            }
             
             val darkTheme = when (themeMode) {
                 1 -> false

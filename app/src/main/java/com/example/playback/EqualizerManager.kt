@@ -10,7 +10,7 @@ object EqualizerManager {
         if (audioSessionId == 0) return
         try {
             if (equalizer != null) {
-                equalizer?.release()
+                try { equalizer?.release() } catch(e: Exception) {}
             }
             equalizer = Equalizer(0, audioSessionId).apply {
                 enabled = true
@@ -21,27 +21,31 @@ object EqualizerManager {
     }
 
     fun release() {
-        equalizer?.release()
+        try { equalizer?.release() } catch(e: Exception) {}
         equalizer = null
     }
 
     fun getBandLevel(band: Short): Short {
-        return equalizer?.getBandLevel(band) ?: 0
+        return try { equalizer?.getBandLevel(band) ?: 0 } catch (e: Exception) { 0 }
     }
 
     fun setBandLevel(band: Short, level: Short) {
-        equalizer?.setBandLevel(band, level)
+        try { equalizer?.setBandLevel(band, level) } catch (e: Exception) {}
     }
 
     fun getNumberOfBands(): Short {
-        return equalizer?.numberOfBands ?: 0
+        return try { equalizer?.numberOfBands ?: 0 } catch (e: Exception) { 0 }
     }
 
     fun getBandFreqRange(band: Short): IntArray {
-        return equalizer?.getBandFreqRange(band) ?: intArrayOf(0, 0)
+        return try { equalizer?.getBandFreqRange(band) ?: intArrayOf(0, 0) } catch (e: Exception) { intArrayOf(0, 0) }
     }
 
     fun getBandLevelRange(): ShortArray {
-        return equalizer?.bandLevelRange ?: shortArrayOf(0, 0)
+        return try { equalizer?.bandLevelRange ?: shortArrayOf(0, 0) } catch (e: Exception) { shortArrayOf(0, 0) }
+    }
+
+    fun getCenterFreq(band: Short): Int {
+        return try { equalizer?.getCenterFreq(band) ?: 0 } catch (e: Exception) { 0 }
     }
 }

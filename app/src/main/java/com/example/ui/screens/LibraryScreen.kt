@@ -3,9 +3,13 @@ package com.example.ui.screens
 import android.content.ContentUris
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -19,6 +23,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -34,6 +40,9 @@ import com.example.ui.viewmodel.MusicViewModel
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeDown
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,7 +50,8 @@ fun LibraryScreen(
     viewModel: MusicViewModel,
     onNavigateToPlayer: () -> Unit,
     onNavigateToPlaylist: (Int) -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToVideoPlayer: (String) -> Unit
 ) {
     val tracks by viewModel.allTracks.collectAsStateWithLifecycle()
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
@@ -74,7 +84,7 @@ fun LibraryScreen(
                         }
 
                         var expanded by remember { mutableStateOf(false) }
-                        IconButton(onClick = { viewModel.loadTracks() }) {
+                        IconButton(onClick = { viewModel.loadTracks(force = true) }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Scan Music")
                         }
                         IconButton(onClick = { expanded = true }) {
@@ -114,6 +124,9 @@ fun LibraryScreen(
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
                     Text("Playlists", modifier = Modifier.padding(16.dp))
                 }
+                Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) {
+                    Text("Videos", modifier = Modifier.padding(16.dp))
+                }
             }
             
             if (selectedTab == 0) {
@@ -152,16 +165,86 @@ fun LibraryScreen(
                         }
                     }
                 }
+            } else if (selectedTab == 3) {
+                val dbVideos by viewModel.allVideos.collectAsStateWithLifecycle()
+                if (dbVideos.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No videos found", style = MaterialTheme.typography.bodyLarge)
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(dbVideos) { video ->
+                            ListItem(
+                                modifier = Modifier.clickable { 
+                                    onNavigateToVideoPlayer(video.uri)
+                                },
+                                headlineContent = { Text(video.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = { Text("Size: ${video.size / (1024 * 1024)} MB") },
+                                leadingContent = {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = "Play Video")
+                                },
+                                trailingContent = {
+                                    Text("${video.duration / 60000}:${String.format("%02d", (video.duration % 60000) / 1000)}")
+                                }
+                            )
+                        }
+                    }
+                }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxSize().padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(playlists) { playlist ->
-                        ListItem(
-                            modifier = Modifier.clickable { onNavigateToPlaylist(playlist.id) },
-                            headlineContent = { Text(playlist.name) },
-                            leadingContent = {
-                                Icon(painterResource(R.drawable.img_album_placeholder_1779303397262), contentDescription = null, modifier = Modifier.size(48.dp))
+                        val gradient = when (playlist.name.lowercase()) {
+                            "amapiano" -> Brush.horizontalGradient(listOf(Color(0xFFF093FB), Color(0xFFF5576C)))
+                            "afrobeats" -> Brush.horizontalGradient(listOf(Color(0xFF11998E), Color(0xFF38EF7D)))
+                            "pop" -> Brush.horizontalGradient(listOf(Color(0xFFFF9A9E), Color(0xFFFECFEF)))
+                            "hip hop" -> Brush.horizontalGradient(listOf(Color(0xFF30CFD0), Color(0xFF330867)))
+                            "r&b" -> Brush.horizontalGradient(listOf(Color(0xFFE65C00), Color(0xFFF9D423)))
+                            else -> Brush.horizontalGradient(listOf(Color(0xFF021B79), Color(0xFF0575E6)))
+                        }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(115.dp)
+                                .clickable { onNavigateToPlaylist(playlist.id) },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(gradient)
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.BottomStart
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.22f),
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .align(Alignment.TopEnd)
+                                )
+                                Column {
+                                    Text(
+                                        text = playlist.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "Sub-genre",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White.copy(alpha = 0.8f)
+                                    )
+                                }
                             }
-                        )
+                        }
                     }
                 }
             }
@@ -173,6 +256,7 @@ fun LibraryScreen(
                     isPlaying = isPlaying,
                     onPlayPause = { viewModel.togglePlayPause() },
                     onClick = onNavigateToPlayer,
+                    viewModel = viewModel,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }
@@ -245,10 +329,13 @@ fun MiniPlayer(
     isPlaying: Boolean,
     onPlayPause: () -> Unit,
     onClick: () -> Unit,
+    viewModel: MusicViewModel,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val albumArtUri = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), track.albumId)
+    val volumeState by viewModel.volume.collectAsStateWithLifecycle()
+    var showVolumeSlider by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
@@ -272,10 +359,38 @@ fun MiniPlayer(
                 modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+            if (showVolumeSlider) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Slider(
+                        value = volumeState,
+                        onValueChange = { viewModel.setVolume(it) },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.weight(1f).padding(vertical = 0.dp)
+                    )
+                    Text(
+                        text = "${(volumeState * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            } else {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                }
             }
+            
+            val volumeIcon = if (volumeState == 0f) Icons.Default.VolumeOff else if (volumeState < 0.5f) Icons.Default.VolumeDown else Icons.Default.VolumeUp
+            IconButton(onClick = { showVolumeSlider = !showVolumeSlider }) {
+                Icon(
+                    imageVector = volumeIcon,
+                    contentDescription = "Volume"
+                )
+            }
+
             IconButton(onClick = onPlayPause) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,

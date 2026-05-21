@@ -37,7 +37,7 @@ class MusicViewModel(
     private val context: Context,
     private val mediaRepository: MediaRepository,
     private val database: MusicDatabase,
-    private val settingsRepository: SettingsRepository
+    val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private var mediaController: MediaController? = null
@@ -46,6 +46,10 @@ class MusicViewModel(
     val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
 
     private val _allTracks = MutableStateFlow<List<AudioTrack>>(emptyList())
+    
+    private val _allVideos = MutableStateFlow<List<com.example.domain.VideoTrack>>(emptyList())
+    val allVideos: StateFlow<List<com.example.domain.VideoTrack>> = _allVideos.asStateFlow()
+
     val customMetadata: StateFlow<List<com.example.data.db.CustomTrackMetadata>> = database.customMetadataDao().getAllMetadata()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -165,21 +169,21 @@ class MusicViewModel(
                             if (cfSec > 0) {
                                 isFadingOut = false
                                 isFadingIn = true
-                                controller.volume = 0f
+                                controller.safeVolume = 0f
                                 viewModelScope.launch {
                                     val steps = 20
                                     val stepTime = (cfSec * 1000L) / steps
                                     var vol = 0f
                                     for (i in 1..steps) {
                                         vol += 1f / steps
-                                        controller.volume = minOf(1f, vol)
+                                        controller.safeVolume = minOf(1f, vol)
                                         delay(stepTime)
                                     }
-                                    controller.volume = 1f
+                                    controller.safeVolume = 1f
                                     isFadingIn = false
                                 }
                             } else {
-                                controller.volume = 1f
+                                controller.safeVolume = 1f
                             }
                         }
                     }
@@ -224,7 +228,7 @@ class MusicViewModel(
                         _currentPosition.value = controller.currentPosition
                         
                         val cfSec = settingsRepository.crossfadeDuration.value
-                        if (cfSec > 0) {
+                        if (cfSec > 0 && controller.duration > 0) {
                             val remain = controller.duration - controller.currentPosition
                             if (remain in 1..(cfSec * 1000L) && !isFadingOut) {
                                 isFadingOut = true
@@ -234,7 +238,7 @@ class MusicViewModel(
                                     var vol = 1f
                                     for (i in 1..steps) {
                                         vol -= 1f / steps
-                                        controller.volume = maxOf(0f, vol)
+                                        controller.safeVolume = maxOf(0f, vol)
                                         delay(stepTime)
                                     }
                                 }
@@ -247,9 +251,11 @@ class MusicViewModel(
         }
     }
 
-    fun loadTracks() {
+    fun loadTracks(force: Boolean = false) {
+        if (!force && _allTracks.value.isNotEmpty()) return
         viewModelScope.launch {
             _allTracks.value = mediaRepository.getAllAudioFiles()
+            _allVideos.value = mediaRepository.getAllVideoFiles()
         }
     }
 
@@ -290,7 +296,7 @@ class MusicViewModel(
 
     fun setVolume(vol: Float) {
         _volume.value = vol
-        mediaController?.volume = vol
+        mediaController?.let { it.safeVolume = vol }
     }
 
     fun setSleepTimer(minutes: Int) {
@@ -341,30 +347,30 @@ class MusicViewModel(
 
     private fun fadeOutAndPause(controller: MediaController) {
         viewModelScope.launch {
-            val originalVolume = controller.volume
+            val originalVolume = controller.safeVolume
             var vol = originalVolume
             while (vol > 0f) {
                 vol -= 0.1f
-                controller.volume = maxOf(0f, vol)
+                controller.safeVolume = maxOf(0f, vol)
                 delay(50)
             }
             controller.pause()
-            controller.volume = originalVolume
+            controller.safeVolume = originalVolume
         }
     }
 
     private fun fadeInAndPlay(controller: MediaController) {
         viewModelScope.launch {
-            val targetVolume = controller.volume
-            controller.volume = 0f
+            val targetVolume = controller.safeVolume
+            controller.safeVolume = 0f
             controller.play()
             var vol = 0f
             while (vol < targetVolume) {
                 vol += 0.1f
-                controller.volume = minOf(targetVolume, vol)
+                controller.safeVolume = minOf(targetVolume, vol)
                 delay(50)
             }
-            controller.volume = targetVolume
+            controller.safeVolume = targetVolume
         }
     }
 
@@ -492,3 +498,13 @@ class MusicViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+private var Player.safeVolume: Float
+    get() = try { this.volume } catch (e: Exception) { 1f }
+    set(v) {
+        try {
+            this.volume = v
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }

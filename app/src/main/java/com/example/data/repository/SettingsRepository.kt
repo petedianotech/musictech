@@ -29,6 +29,9 @@ class SettingsRepository(context: Context) {
     private val _pauseOnHeadsetDisconnect = MutableStateFlow(prefs.getBoolean("pause_on_headset", true))
     val pauseOnHeadsetDisconnect: StateFlow<Boolean> = _pauseOnHeadsetDisconnect
 
+    private val _showLockscreenArt = MutableStateFlow(prefs.getBoolean("show_lockscreen_art", true))
+    val showLockscreenArt: StateFlow<Boolean> = _showLockscreenArt
+
     fun setThemeMode(mode: Int) {
         prefs.edit { putInt("theme_mode", mode) }
         _themeMode.value = mode
@@ -68,6 +71,11 @@ class SettingsRepository(context: Context) {
     fun setPauseOnHeadsetDisconnect(enable: Boolean) {
         prefs.edit { putBoolean("pause_on_headset", enable) }
         _pauseOnHeadsetDisconnect.value = enable
+    }
+
+    fun setShowLockscreenArt(enable: Boolean) {
+        prefs.edit { putBoolean("show_lockscreen_art", enable) }
+        _showLockscreenArt.value = enable
     }
 }
 

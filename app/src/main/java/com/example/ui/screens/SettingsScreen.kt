@@ -39,6 +39,19 @@ fun SettingsScreen(
                 .padding(paddingValues)
                 .fillMaxSize()
         ) {
+            if (com.example.PerformanceEnhancer.isAvailable) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Text(
+                        text = com.example.PerformanceEnhancer.getNativeOptimizationFlag(),
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
             Text(
                 text = "Theme",
                 style = MaterialTheme.typography.titleMedium,
@@ -140,6 +153,7 @@ fun SettingsScreen(
             val playOnHeadset by settingsRepository.playOnHeadsetConnect.collectAsStateWithLifecycle()
             val pauseOnHeadset by settingsRepository.pauseOnHeadsetDisconnect.collectAsStateWithLifecycle()
             val spectrum by settingsRepository.spectrumStyle.collectAsStateWithLifecycle()
+            val showLockscreenArt by settingsRepository.showLockscreenArt.collectAsStateWithLifecycle()
 
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Play on headset connect")
@@ -148,6 +162,13 @@ fun SettingsScreen(
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Pause on headset disconnect")
                 Switch(checked = pauseOnHeadset, onCheckedChange = { settingsRepository.setPauseOnHeadsetDisconnect(it) })
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Full screen lock screen player")
+                    Text("Show artwork and visualizer when screen is locked", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = showLockscreenArt, onCheckedChange = { settingsRepository.setShowLockscreenArt(it) })
             }
 
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -172,16 +193,16 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp)
             )
-            val eq = com.example.playback.EqualizerManager.equalizer
-            if (eq != null) {
-                val numBands = eq.numberOfBands
-                val minLevel = eq.bandLevelRange[0]
-                val maxLevel = eq.bandLevelRange[1]
+            val numBands = com.example.playback.EqualizerManager.getNumberOfBands().toInt()
+            if (numBands > 0) {
+                val range = com.example.playback.EqualizerManager.getBandLevelRange()
+                val minLevel = range[0]
+                val maxLevel = range[1]
                 
                 for (i in 0 until numBands) {
                     val band = i.toShort()
-                    val freqRange = eq.getCenterFreq(band) / 1000 // Convert mHz to Hz
-                    var level by remember { mutableFloatStateOf(eq.getBandLevel(band).toFloat()) }
+                    val freqRange = com.example.playback.EqualizerManager.getCenterFreq(band) / 1000 // Convert mHz to Hz
+                    var level by remember { mutableFloatStateOf(com.example.playback.EqualizerManager.getBandLevel(band).toFloat()) }
                     
                     Row(
                         modifier = Modifier
@@ -193,7 +214,7 @@ fun SettingsScreen(
                         Text(text = "$freqRange Hz", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(50.dp))
                         Slider(
                             value = level,
-                            onValueChange = { level = it; eq.setBandLevel(band, it.toInt().toShort()) },
+                            onValueChange = { level = it; com.example.playback.EqualizerManager.setBandLevel(band, it.toInt().toShort()) },
                             valueRange = minLevel.toFloat()..maxLevel.toFloat(),
                             modifier = Modifier.weight(1f).padding(horizontal = 16.dp)
                         )

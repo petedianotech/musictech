@@ -12,6 +12,7 @@ import com.example.ui.screens.PlayerScreen
 import com.example.ui.screens.EqualizerScreen
 import com.example.ui.screens.PlaylistDetailScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.VideoPlayerScreen
 import com.example.ui.viewmodel.MusicViewModel
 import com.example.data.repository.SettingsRepository
 
@@ -32,12 +33,23 @@ fun AppNavGraph(
                 viewModel = viewModel,
                 onNavigateToPlayer = { navController.navigate("player") },
                 onNavigateToPlaylist = { id -> navController.navigate("playlist/$id") },
-                onNavigateToSettings = { navController.navigate("settings") }
+                onNavigateToSettings = { navController.navigate("settings") },
+                onNavigateToVideoPlayer = { uri -> 
+                    navController.navigate("video_player/${java.net.URLEncoder.encode(uri, "UTF-8")}") 
+                }
             )
         }
         composable("settings") {
             SettingsScreen(
                 settingsRepository = settingsRepository,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        composable("video_player/{videoUri}") { backStackEntry ->
+            val videoUri = backStackEntry.arguments?.getString("videoUri") ?: ""
+            VideoPlayerScreen(
+                videoUri = videoUri,
+                viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
