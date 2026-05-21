@@ -44,6 +44,9 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeDown
 
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
@@ -58,9 +61,13 @@ fun LibraryScreen(
     
     var showAddPlaylistDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
     
     Scaffold(
         topBar = {
+            if (searchQuery.isNotEmpty() || selectedTab == 0 || selectedTab == 3) {
+                // We'll show a search bar or standard top bar. Let's just put search in the top bar.
+            }
             TopAppBar(
                 title = { Text("Musictech", fontWeight = FontWeight.Bold) },
                 actions = {
@@ -115,28 +122,48 @@ fun LibraryScreen(
             
             Column(modifier = Modifier.fillMaxSize().padding(bottom = if (currentTrack != null) 72.dp else 0.dp)) {
                 TabRow(selectedTabIndex = selectedTab) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0; searchQuery = "" }) {
                     Text("Tracks", modifier = Modifier.padding(16.dp))
                 }
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1; searchQuery = "" }) {
                     Text("Favorites", modifier = Modifier.padding(16.dp))
                 }
-                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
+                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2; searchQuery = "" }) {
                     Text("Playlists", modifier = Modifier.padding(16.dp))
                 }
-                Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) {
+                Tab(selected = selectedTab == 3, onClick = { selectedTab = 3; searchQuery = "" }) {
                     Text("Videos", modifier = Modifier.padding(16.dp))
                 }
             }
             
+            if (selectedTab == 0 || selectedTab == 3) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("Search by title...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear Search")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp)
+                )
+            }
+            
             if (selectedTab == 0) {
-                if (tracks.isEmpty()) {
+                val filteredTracks = if (searchQuery.isEmpty()) tracks else tracks.filter { it.title.contains(searchQuery, ignoreCase = true) || it.artist.contains(searchQuery, ignoreCase = true) }
+                if (filteredTracks.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("No tracks found", style = MaterialTheme.typography.bodyLarge)
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(tracks) { track ->
+                        items(filteredTracks) { track ->
                             TrackItem(track = track, onClick = {
                                 viewModel.playTrack(track)
                             }, onHide = {
@@ -167,13 +194,14 @@ fun LibraryScreen(
                 }
             } else if (selectedTab == 3) {
                 val dbVideos by viewModel.allVideos.collectAsStateWithLifecycle()
-                if (dbVideos.isEmpty()) {
+                val filteredVideos = if (searchQuery.isEmpty()) dbVideos else dbVideos.filter { it.title.contains(searchQuery, ignoreCase = true) }
+                if (filteredVideos.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("No videos found", style = MaterialTheme.typography.bodyLarge)
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(dbVideos) { video ->
+                        items(filteredVideos) { video ->
                             ListItem(
                                 modifier = Modifier.clickable { 
                                     onNavigateToVideoPlayer(video.uri)
