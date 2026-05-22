@@ -12,5 +12,8 @@ data class Song(
     val durationMs: Long,
     val isFavorite: Boolean = false,
     val genre: String = "Unknown",
-    val colorHex: String = "#3F51B5" // Default elegant Indigo
+    val colorHex: String = "#3F51B5",
+    val lastPlayedTimestamp: Long = 0L,
+    val lyrics: String = "",
+    val albumArtUrl: String = ""
 )

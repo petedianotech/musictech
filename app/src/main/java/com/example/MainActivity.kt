@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -80,7 +81,9 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import coil.compose.AsyncImage
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,6 +134,22 @@ fun formatDuration(ms: Long): String {
     return String.format("%02d:%02d", minutes, seconds)
 }
 
+data class LyricLine(val timestampMs: Long, val text: String)
+
+fun parseLyrics(lyricsData: String): List<LyricLine> {
+    if (lyricsData.isBlank()) return emptyList()
+    return try {
+        lyricsData.split("\n").mapNotNull { line ->
+            val parts = line.split("|")
+            if (parts.size == 2) {
+                LyricLine(parts[0].toLong(), parts[1])
+            } else null
+        }.sortedBy { it.timestampMs }
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
 @Composable
 fun MusicAppRoot() {
     val viewModel: MusicViewModel = viewModel()
@@ -138,6 +157,8 @@ fun MusicAppRoot() {
     // Core database collections
     val allSongs by viewModel.allSongs.collectAsState()
     val favoriteSongs by viewModel.favoriteSongs.collectAsState()
+    val recentlyPlayedSongs by viewModel.recentlyPlayedSongs.collectAsState()
+    val smartPlaylists by viewModel.smartPlaylists.collectAsState()
     
     // Player settings state
     val currentSong by viewModel.currentSong.collectAsState()
@@ -235,6 +256,40 @@ fun MusicAppRoot() {
                         }
                     }
                 }
+                
+                // Live Lyrics expansion pane
+                if (currentSong?.lyrics?.isNotBlank() == true) {
+                    item {
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn() + slideInVertically()
+                        ) {
+                            LyricsCard(song = currentSong!!, currentPositionMs = currentPositionMs)
+                        }
+                    }
+                }
+
+                // Recently Played Section
+                if (recentlyPlayedSongs.isNotEmpty()) {
+                    item {
+                        RecentlyPlayedSection(
+                            recentSongs = recentlyPlayedSongs,
+                            currentSong = currentSong,
+                            isPlaying = isPlaying,
+                            onSongClick = { viewModel.playSong(it) }
+                        )
+                    }
+                }
+
+                // Smart Playlists Generator (Genre-Based)
+                if (smartPlaylists.isNotEmpty()) {
+                    item {
+                        SmartPlaylistsSection(
+                            smartPlaylists = smartPlaylists,
+                            onPlaylistClick = { viewModel.playSmartPlaylist(it) }
+                        )
+                    }
+                }
 
                 // Library title bar
                 item {
@@ -267,7 +322,7 @@ fun MusicAppRoot() {
                             onClick = { showAddDialog = true },
                             modifier = Modifier
                                 .size(44.dp)
-                               .clip(CircleShape)
+                                .clip(CircleShape)
                                 .background(
                                     Brush.linearGradient(
                                         colors = listOf(WorkspaceBlue, WorkspaceGreen)
@@ -331,8 +386,8 @@ fun MusicAppRoot() {
         if (showAddDialog) {
             AddSongDialog(
                 onDismiss = { showAddDialog = false },
-                onAddSong = { title, artist, url, genre, color ->
-                    viewModel.addNewSong(title, artist, url, genre, color)
+                onAddSong = { title, artist, url, genre, color, lyrics, albumArtUrl ->
+                    viewModel.addNewSong(title, artist, url, genre, color, lyrics, albumArtUrl)
                     showAddDialog = false
                 }
             )
@@ -348,6 +403,194 @@ fun MusicAppRoot() {
                     songToDelete = null
                 }
             )
+        }
+    }
+}
+
+// Detailed Live Lyrics Integration card
+@Composable
+fun LyricsCard(
+    song: Song,
+    currentPositionMs: Long
+) {
+    val lyrics = remember(song.lyrics) { parseLyrics(song.lyrics) }
+    if (lyrics.isEmpty()) return
+
+    // Find the current line dynamically sync'd
+    val currentLineIndex = lyrics.indexOfLast { it.timestampMs <= currentPositionMs }.coerceAtLeast(0)
+    
+    val themeColor = song.colorHex.toComposeColor()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(130.dp)
+            .testTag("lyrics_panel"),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.04f)
+        ),
+        border = borderHelper(Color.White.copy(alpha = 0.08f))
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
+                if (currentLineIndex > 0) {
+                    Text(
+                        text = lyrics[currentLineIndex - 1].text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.2f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                
+                Text(
+                    text = lyrics.getOrNull(currentLineIndex)?.text ?: "...",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp),
+                    color = themeColor,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
+                )
+                
+                if (currentLineIndex < lyrics.size - 1) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = lyrics[currentLineIndex + 1].text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.2f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Detailed Play History horizontally
+@Composable
+fun RecentlyPlayedSection(
+    recentSongs: List<Song>,
+    currentSong: Song?,
+    isPlaying: Boolean,
+    onSongClick: (Song) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Recently Played",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = Color.White),
+            modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)
+        )
+        
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(recentSongs) { song ->
+                val isActive = currentSong?.id == song.id
+                val themeColor = song.colorHex.toComposeColor()
+                
+                Card(
+                    modifier = Modifier
+                        .width(130.dp)
+                        .clickable { onSongClick(song) }
+                        .testTag("recent_song_${song.id}"),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.White.copy(alpha = if (isActive) 0.08f else 0.03f)
+                    ),
+                    border = borderHelper(if (isActive) themeColor else Color.White.copy(alpha = 0.05f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(themeColor.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (song.albumArtUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = song.albumArtUrl,
+                                    contentDescription = "Album Art",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = themeColor, modifier = Modifier.size(24.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = song.title,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = Color.White),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = song.artist,
+                            style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Smart Playlist Generator (Genre-Based)
+@Composable
+fun SmartPlaylistsSection(
+    smartPlaylists: Map<String, List<Song>>,
+    onPlaylistClick: (List<Song>) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Smart Mixes",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = Color.White),
+            modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)
+        )
+        
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(smartPlaylists.entries.toList()) { entry ->
+                val genre = entry.key
+                val songs = entry.value
+                val dominantColor = songs.firstOrNull()?.colorHex?.toComposeColor() ?: WorkspaceBlue
+                
+                Card(
+                     modifier = Modifier
+                         .width(180.dp)
+                         .height(110.dp)
+                         .clickable { onPlaylistClick(songs) }
+                         .testTag("smart_playlist_$genre"),
+                     shape = RoundedCornerShape(20.dp),
+                     colors = CardDefaults.cardColors(containerColor = dominantColor.copy(alpha = 0.15f)),
+                     border = borderHelper(dominantColor.copy(alpha = 0.4f))
+                 ) {
+                     Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                         Column(modifier = Modifier.align(Alignment.BottomStart)) {
+                             Text(
+                                 text = "$genre Vibes",
+                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold, color = Color.White),
+                                 maxLines = 2
+                             )
+                             Text(
+                                 text = "${songs.size} curated tracks",
+                                 style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.8f))
+                             )
+                         }
+                     }
+                 }
+            }
         }
     }
 }
@@ -663,12 +906,21 @@ fun CoreVisualizerCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = "Active Track Note vector",
-                        tint = themeColor,
-                        modifier = Modifier.size(54.dp)
-                    )
+                    if (song.albumArtUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = song.albumArtUrl,
+                            contentDescription = "Album Art",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = "Active Track Note vector",
+                            tint = themeColor,
+                            modifier = Modifier.size(54.dp)
+                        )
+                    }
                 }
             }
 
@@ -875,12 +1127,21 @@ fun SongGlassCard(
                     .border(width = 1.dp, color = themeColor.copy(alpha = 0.4f), shape = RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = themeColor,
-                    modifier = Modifier.size(22.dp)
-                )
+                if (song.albumArtUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = song.albumArtUrl,
+                        contentDescription = "Album Art",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = themeColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(14.dp))
@@ -945,12 +1206,14 @@ fun SongGlassCard(
 @Composable
 fun AddSongDialog(
     onDismiss: () -> Unit,
-    onAddSong: (String, String, String, String, String) -> Unit
+    onAddSong: (String, String, String, String, String, String, String) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var artist by remember { mutableStateOf("") }
     var uriOrUrl by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf("") }
+    var lyrics by remember { mutableStateOf("") }
+    var albumArtUrl by remember { mutableStateOf("") }
     
     // Choose which Google color theme to link
     var selectedColorCode by remember { mutableStateOf("#4285F4") } // Default is Blue
@@ -1052,6 +1315,33 @@ fun AddSongDialog(
                         .testTag("add_song_input_genre")
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = lyrics,
+                    onValueChange = { lyrics = it },
+                    placeholder = { Text("0|First line\n5000|Second line") },
+                    label = { Text("Live Lyrics (timestamp_ms|text)") },
+                    colors = textFieldColorsHelper(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .testTag("add_song_input_lyrics")
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = albumArtUrl,
+                    onValueChange = { albumArtUrl = it },
+                    placeholder = { Text("e.g. https://images.unsplash.com/...") },
+                    label = { Text("Album Art URL (Optional)") },
+                    colors = textFieldColorsHelper(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("add_song_input_album_art")
+                )
+
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Workspace Color selector chips
@@ -1096,7 +1386,7 @@ fun AddSongDialog(
                 Button(
                     onClick = {
                         if (title.isNotBlank()) {
-                            onAddSong(title, artist, uriOrUrl, genre, selectedColorCode)
+                            onAddSong(title, artist, uriOrUrl, genre, selectedColorCode, lyrics, albumArtUrl)
                         }
                     },
                     modifier = Modifier

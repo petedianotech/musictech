@@ -1,11 +1,16 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.ComponentName
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.MediaMetadata
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.example.service.PlaybackService
 import com.example.data.db.MusicDatabase
 import com.example.data.db.Song
 import com.example.data.repository.MusicRepository
@@ -15,7 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -24,9 +29,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val songDao = MusicDatabase.getDatabase(application).songDao()
     private val repository = MusicRepository(songDao)
 
-    // ExoPlayer Instance
-    private var exoPlayer: ExoPlayer? = null
-
+    // MediaController Instance
+    private var mediaController: MediaController? = null
+    
     // Player State Flows
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong: StateFlow<Song?> = _currentSong.asStateFlow()
@@ -55,11 +60,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
+    val recentlyPlayedSongs: StateFlow<List<Song>> = repository.recentlyPlayed
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Smart playlists generic map (Genre -> List of Songs)
+    val smartPlaylists: StateFlow<Map<String, List<Song>>> = repository.allSongs
+        .map { songs -> songs.groupBy { it.genre } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
+
     private var progressUpdateJob: Job? = null
 
     init {
-        // Initialize ExoPlayer
-        setupExoPlayer()
+        // Initialize MediaController
+        setupMediaController()
 
         // Sync and Pre-populate songs if completely empty
         viewModelScope.launch {
@@ -75,14 +96,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun setupExoPlayer() {
-        if (exoPlayer == null) {
-            exoPlayer = ExoPlayer.Builder(getApplication()).build().apply {
-                repeatMode = Player.REPEAT_MODE_ALL
-                addListener(object : Player.Listener {
+    private fun setupMediaController() {
+        val sessionToken = SessionToken(
+            getApplication(),
+            ComponentName(getApplication(), PlaybackService::class.java)
+        )
+        val controllerFuture = MediaController.Builder(getApplication(), sessionToken).buildAsync()
+        controllerFuture.addListener(
+            {
+                mediaController = controllerFuture.get()
+                mediaController?.repeatMode = Player.REPEAT_MODE_ALL
+                mediaController?.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         if (playbackState == Player.STATE_READY) {
-                            _durationMs.value = duration
+                            _durationMs.value = mediaController?.duration ?: 0L
                         } else if (playbackState == Player.STATE_ENDED) {
                             playNext()
                         }
@@ -97,8 +124,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 })
-            }
-        }
+            },
+            ContextCompat.getMainExecutor(getApplication())
+        )
     }
 
     private fun prepopulateDefaultSongs() {
@@ -111,15 +139,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
                     durationMs = 372000,
                     genre = "Docs Ambient",
-                    colorHex = "#4285F4" // Google Workspace Blue
+                    colorHex = "#4285F4", // Workspace Blue
+                    lyrics = "0|Welcome to Azure Workspace\n5000|A soothing ambient soundscape\n10000|Focus and create\n15000|Let the ideas flow\n20000|Uninterrupted productivity\n40000|Feel the groove",
+                    albumArtUrl = "https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=600&h=600&fit=crop"
                 ),
                 Song(
                     title = "Emerald Sheets",
                     artist = "Chilledge",
                     uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
                     durationMs = 423000,
-                    genre = "Sheets Lo-Fi",
-                    colorHex = "#0F9D58" // Google Workspace Green
+                    genre = "Docs Ambient",
+                    colorHex = "#0F9D58", // Workspace Green
+                    lyrics = "0|Entering the Emerald Sheets\n8000|Calculate your dreams\n16000|Data flows like a river\n24000|Structured and aligned\n32000|Harmony in logic",
+                    albumArtUrl = "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=600&h=600&fit=crop"
                 ),
                 Song(
                     title = "Solar Keynote",
@@ -127,7 +159,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
                     durationMs = 302000,
                     genre = "Slides Acoustic",
-                    colorHex = "#F4B400" // Google Workspace Yellow
+                    colorHex = "#F4B400", // Workspace Yellow
+                    lyrics = "0|Presenting Solar Keynote\n10000|Transitions fade in\n20000|Bright ideas illuminated\n30000|Captivate the audience",
+                    albumArtUrl = "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=600&h=600&fit=crop"
                 ),
                 Song(
                     title = "Crimson Drive",
@@ -135,7 +169,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3",
                     durationMs = 318000,
                     genre = "Drive Synth",
-                    colorHex = "#DB4437" // Google Workspace Red
+                    colorHex = "#DB4437", // Workspace Red
+                    lyrics = "0|Welcome to the Crimson Drive\n6000|High octane storage\n12000|Secure and fast\n18000|Racing through the cloud\n24000|Limitless capacity",
+                    albumArtUrl = "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&h=600&fit=crop"
                 )
             )
 
@@ -147,15 +183,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     // Playback control
     fun playSong(song: Song) {
-        _currentSong.value = song
-        loadSongInPlayer(song, playWhenReady = true)
+        val updatedSong = song.copy(lastPlayedTimestamp = System.currentTimeMillis())
+        _currentSong.value = updatedSong
+        viewModelScope.launch {
+            repository.updateSong(updatedSong) // Persist play history
+        }
+        loadSongInPlayer(updatedSong, playWhenReady = true)
     }
 
     private fun loadSongInPlayer(song: Song, playWhenReady: Boolean) {
-        exoPlayer?.let { player ->
+        mediaController?.let { player ->
             player.stop()
             player.clearMediaItems()
-            val mediaItem = MediaItem.fromUri(song.uriOrUrl)
+            val mediaMetadata = MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .setGenre(song.genre)
+                .build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(song.uriOrUrl)
+                .setMediaMetadata(mediaMetadata)
+                .build()
             player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = playWhenReady
@@ -163,7 +211,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun togglePlayPause() {
-        exoPlayer?.let { player ->
+        mediaController?.let { player ->
             if (player.isPlaying) {
                 player.pause()
             } else {
@@ -178,7 +226,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun seekTo(progress: Float) {
-        exoPlayer?.let { player ->
+        mediaController?.let { player ->
             val targetPositionMs = (progress * _durationMs.value).toLong()
             player.seekTo(targetPositionMs)
             _currentPositionMs.value = targetPositionMs
@@ -200,6 +248,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val prevIndex = if (currentIndex <= 0) list.lastIndex else currentIndex - 1
         playSong(list[prevIndex])
     }
+    
+    // Feature: Smart Playlist invocation
+    fun playSmartPlaylist(songs: List<Song>) {
+        if(songs.isNotEmpty()) {
+            playSong(songs.first())
+        }
+    }
 
     // Database CRUD actions
     fun deleteSong(song: Song) {
@@ -212,7 +267,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     _currentSong.value = remainingList.first()
                     loadSongInPlayer(remainingList.first(), playWhenReady = _isPlaying.value)
                 } else {
-                    exoPlayer?.stop()
+                    mediaController?.stop()
                     _currentSong.value = null
                     _isPlaying.value = false
                     _currentPositionMs.value = 0L
@@ -223,7 +278,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addNewSong(title: String, artist: String, uriOrUrl: String, genre: String, colorHex: String) {
+    fun addNewSong(title: String, artist: String, uriOrUrl: String, genre: String, colorHex: String, lyrics: String = "", albumArtUrl: String = "") {
         viewModelScope.launch {
             val newSong = Song(
                 title = title,
@@ -231,7 +286,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 uriOrUrl = if (uriOrUrl.isNotBlank()) uriOrUrl else "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3",
                 durationMs = 280000,
                 genre = if (genre.isNotBlank()) genre else "Interactive Indie",
-                colorHex = if (colorHex.startsWith("#") && colorHex.length == 7) colorHex else "#4285F4"
+                colorHex = if (colorHex.startsWith("#") && colorHex.length == 7) colorHex else "#4285F4",
+                lyrics = lyrics,
+                albumArtUrl = albumArtUrl
             )
             repository.insertSong(newSong)
         }
@@ -252,13 +309,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         stopProgressUpdateLoop()
         progressUpdateJob = viewModelScope.launch {
             while (true) {
-                exoPlayer?.let { player ->
+                mediaController?.let { player ->
                     if (player.isPlaying) {
                         _currentPositionMs.value = player.currentPosition
                         _durationMs.value = player.duration.coerceAtLeast(0L)
                     }
                 }
-                delay(1000)
+                delay(100) // faster 100ms update for smooth lyrics syncing
             }
         }
     }
@@ -271,7 +328,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopProgressUpdateLoop()
-        exoPlayer?.release()
-        exoPlayer = null
+        mediaController?.release()
+        mediaController = null
     }
 }
