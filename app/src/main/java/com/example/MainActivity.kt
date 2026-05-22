@@ -132,7 +132,7 @@ fun formatDuration(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0L)
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
-    return String.format("%02d:%02d", minutes, seconds)
+    return String.format("%02d:%02d", minutes.coerceAtMost(99L), seconds.coerceAtMost(59L))
 }
 
 data class LyricLine(val timestampMs: Long, val text: String)
@@ -158,7 +158,7 @@ enum class AppTheme(val displayName: String, val midColor: Color, val bottomColo
     ROYAL("Royal", Color(0xFF1B1B4B), Color(0xFF0F0F2D), Color(0xFF2B2B70), Color(0xFFFFD700))
 }
 
-val LocalAppTheme = androidx.compose.runtime.staticCompositionLocalOf { AppTheme.MIDNIGHT }
+val LocalAppTheme = androidx.compose.runtime.compositionLocalOf { AppTheme.MIDNIGHT }
 
 @Composable
 fun MusicAppRoot() {
