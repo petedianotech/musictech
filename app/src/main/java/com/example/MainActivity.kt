@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
@@ -150,9 +151,28 @@ fun parseLyrics(lyricsData: String): List<LyricLine> {
     }
 }
 
+enum class AppTheme(val displayName: String, val midColor: Color, val bottomColor: Color, val surfaceColor: Color) {
+    MIDNIGHT("Midnight Space", Color(0xFF121422), Color(0xFF060912), Color(0xFF121422)),
+    SUNSET("Sunset Vibe", Color(0xFF301024), Color(0xFF1A0815), Color(0xFF301024)),
+    FOREST("Deep Forest", Color(0xFF0D2418), Color(0xFF06140D), Color(0xFF0D2418)),
+    OCEAN("Ocean Deep", Color(0xFF0A192F), Color(0xFF040A14), Color(0xFF0A192F))
+}
+
+val LocalAppTheme = androidx.compose.runtime.staticCompositionLocalOf { AppTheme.MIDNIGHT }
+
 @Composable
 fun MusicAppRoot() {
     val viewModel: MusicViewModel = viewModel()
+    
+    var currentTheme by remember { mutableStateOf(AppTheme.MIDNIGHT) }
+    
+    androidx.compose.runtime.CompositionLocalProvider(LocalAppTheme provides currentTheme) {
+        MusicAppScreen(viewModel = viewModel, currentTheme = currentTheme, onThemeChange = { currentTheme = it })
+    }
+}
+
+@Composable
+fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeChange: (AppTheme) -> Unit) {
     
     // Core database collections
     val allSongs by viewModel.allSongs.collectAsState()
@@ -169,6 +189,12 @@ fun MusicAppRoot() {
     // Add song form trigger state
     var showAddDialog by mutableStateOf(false)
     
+    // Settings dialog trigger state
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    
+    // Search query state
+    var searchQuery by remember { mutableStateOf("") }
+    
     // Deletion confirmation trigger state
     var songToDelete by remember { mutableStateOf<Song?>(null) }
     
@@ -180,6 +206,11 @@ fun MusicAppRoot() {
         label = "DynamicAmbientColor"
     )
 
+    val filteredSongs = remember(allSongs, searchQuery) {
+        if (searchQuery.isBlank()) allSongs
+        else allSongs.filter { it.title.contains(searchQuery, ignoreCase = true) || it.artist.contains(searchQuery, ignoreCase = true) }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -187,8 +218,8 @@ fun MusicAppRoot() {
                 Brush.verticalGradient(
                     colors = listOf(
                         animatedBgColor,
-                        SlateMidnight,
-                        Color(0xFF060912)
+                        currentTheme.midColor,
+                        currentTheme.bottomColor
                     )
                 )
             )
@@ -317,30 +348,61 @@ fun MusicAppRoot() {
                             )
                         }
 
-                        // Add track button triggering modal
-                        IconButton(
-                            onClick = { showAddDialog = true },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(WorkspaceBlue, WorkspaceGreen)
-                                    )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Settings button
+                            IconButton(
+                                onClick = { showSettingsDialog = true },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.1f))
+                                    .testTag("settings_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings",
+                                    tint = Color.White
                                 )
-                                .testTag("add_song_trigger_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Add Track",
-                                tint = Color.White
-                            )
+                            }
+                            
+                            // Add track button triggering modal
+                            IconButton(
+                                onClick = { showAddDialog = true },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(WorkspaceBlue, WorkspaceGreen)
+                                        )
+                                    )
+                                    .testTag("add_song_trigger_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Track",
+                                    tint = Color.White
+                                )
+                            }
                         }
                     }
                 }
 
                 // Song feed
-                if (allSongs.isEmpty()) {
+
+                item {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Search songs or artists...", color = Color.White.copy(alpha = 0.5f)) },
+                        colors = textFieldColorsHelper(),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true
+                    )
+                }
+
+                if (filteredSongs.isEmpty()) {
                     item {
                         Card(
                             modifier = Modifier
@@ -357,7 +419,7 @@ fun MusicAppRoot() {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "No songs added yet.\nTap '+' above to preload beats!",
+                                    text = if (allSongs.isEmpty()) "No songs added yet.\nTap '+' above to preload beats!" else "No results found for '$searchQuery'",
                                     color = Color.White.copy(alpha = 0.4f),
                                     textAlign = TextAlign.Center,
                                     lineHeight = 20.sp
@@ -366,7 +428,7 @@ fun MusicAppRoot() {
                         }
                     }
                 } else {
-                    items(allSongs) { song ->
+                    items(filteredSongs) { song ->
                         SongGlassCard(
                             song = song,
                             isActive = currentSong?.id == song.id,
@@ -393,6 +455,15 @@ fun MusicAppRoot() {
             )
         }
 
+        // Settings Dialog
+        if (showSettingsDialog) {
+            SettingsDialog(
+                currentTheme = currentTheme,
+                onThemeChange = onThemeChange,
+                onDismiss = { showSettingsDialog = false }
+            )
+        }
+
         // Deletion confirmation trigger state (To satisfy the "add delete songs button" securely)
         songToDelete?.let { song ->
             DeleteConfirmationDialog(
@@ -403,6 +474,109 @@ fun MusicAppRoot() {
                     songToDelete = null
                 }
             )
+        }
+    }
+}
+
+@Composable
+fun SettingsDialog(currentTheme: AppTheme, onThemeChange: (AppTheme) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = currentTheme.surfaceColor
+            ),
+            border = borderHelper(Color.White.copy(alpha = 0.12f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Settings",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close Settings",
+                            tint = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text("App Theme", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    items(AppTheme.values()) { theme ->
+                        val isSelected = currentTheme == theme
+                        Box(
+                            modifier = Modifier
+                                .clickable { onThemeChange(theme) }
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) Color.White.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = theme.displayName,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // App version
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("App Version", color = Color.White)
+                    Text("1.0.0", color = Color.White.copy(alpha = 0.5f))
+                }
+
+                // Audio Quality (Mock)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Streaming Quality", color = Color.White)
+                    Text("High", color = WorkspaceBlue)
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = WorkspaceBlue)
+                ) {
+                    Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
@@ -1233,7 +1407,7 @@ fun AddSongDialog(
                 .testTag("add_song_dialog_panel"),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(
-                containerColor = SlateMidnight
+                containerColor = LocalAppTheme.current.surfaceColor
             ),
             border = borderHelper(Color.White.copy(alpha = 0.12f))
         ) {
@@ -1438,7 +1612,7 @@ fun DeleteConfirmationDialog(
                 .testTag("delete_confirmation_modal"),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = SlateMidnight
+                containerColor = LocalAppTheme.current.surfaceColor
             ),
             border = borderHelper(WorkspaceRed.copy(alpha = 0.2f))
         ) {
