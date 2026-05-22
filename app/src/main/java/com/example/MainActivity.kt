@@ -151,11 +151,11 @@ fun parseLyrics(lyricsData: String): List<LyricLine> {
     }
 }
 
-enum class AppTheme(val displayName: String, val midColor: Color, val bottomColor: Color, val surfaceColor: Color) {
-    MIDNIGHT("Midnight Space", Color(0xFF121422), Color(0xFF060912), Color(0xFF121422)),
-    SUNSET("Sunset Vibe", Color(0xFF301024), Color(0xFF1A0815), Color(0xFF301024)),
-    FOREST("Deep Forest", Color(0xFF0D2418), Color(0xFF06140D), Color(0xFF0D2418)),
-    OCEAN("Ocean Deep", Color(0xFF0A192F), Color(0xFF040A14), Color(0xFF0A192F))
+enum class AppTheme(val displayName: String, val midColor: Color, val bottomColor: Color, val surfaceColor: Color, val accentColor: Color) {
+    MIDNIGHT("Midnight", Color(0xFF121422), Color(0xFF060912), Color(0xFF1A1D2E), Color(0xFF4D88FF)),
+    SUNSET("Sunset", Color(0xFF2A0845), Color(0xFF150426), Color(0xFF3B0B60), Color(0xFFFF5E8E)),
+    FOREST("Forest", Color(0xFF0A2E1C), Color(0xFF05170E), Color(0xFF15402B), Color(0xFF48D18D)),
+    ROYAL("Royal", Color(0xFF1B1B4B), Color(0xFF0F0F2D), Color(0xFF2B2B70), Color(0xFFFFD700))
 }
 
 val LocalAppTheme = androidx.compose.runtime.staticCompositionLocalOf { AppTheme.MIDNIGHT }
@@ -565,14 +565,14 @@ fun SettingsDialog(currentTheme: AppTheme, onThemeChange: (AppTheme) -> Unit, on
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Streaming Quality", color = Color.White)
-                    Text("High", color = WorkspaceBlue)
+                    Text("High", color = currentTheme.accentColor)
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = WorkspaceBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor)
                 ) {
                     Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
                 }
@@ -796,7 +796,7 @@ fun BrandLogoWidget() {
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(22.dp))
-                    .background(SlateMidnight),
+                    .background(LocalAppTheme.current.surfaceColor),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -882,7 +882,7 @@ fun HeadsUpNotificationBar(
                         modifier = Modifier
                             .size(12.dp)
                             .clip(CircleShape)
-                            .background(SlateMidnight)
+                            .background(LocalAppTheme.current.surfaceColor)
                     )
                 }
 
@@ -1070,7 +1070,7 @@ fun CoreVisualizerCard(
                     modifier = Modifier
                         .size(130.dp)
                         .clip(CircleShape)
-                        .background(SlateMidnight)
+                        .background(LocalAppTheme.current.surfaceColor)
                         .border(
                             width = 4.dp,
                             brush = Brush.sweepGradient(
