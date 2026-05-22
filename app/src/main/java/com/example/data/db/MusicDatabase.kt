@@ -5,12 +5,9 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Playlist::class, PlaylistTrack::class, TrackLyrics::class, FavoriteTrack::class, CustomTrackMetadata::class], version = 4, exportSchema = false)
+@Database(entities = [Song::class], version = 1, exportSchema = false)
 abstract class MusicDatabase : RoomDatabase() {
-    abstract fun playlistDao(): PlaylistDao
-    abstract fun trackLyricsDao(): TrackLyricsDao
-    abstract fun favoriteDao(): FavoriteDao
-    abstract fun customMetadataDao(): CustomMetadataDao
+    abstract fun songDao(): SongDao
 
     companion object {
         @Volatile
@@ -21,10 +18,8 @@ abstract class MusicDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MusicDatabase::class.java,
-                    "music_database"
-                )
-                .fallbackToDestructiveMigration()
-                .build()
+                    "musictech_db"
+                ).build()
                 INSTANCE = instance
                 instance
             }
