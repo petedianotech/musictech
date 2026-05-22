@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FastForward
@@ -94,7 +95,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.db.Song
 import com.example.ui.theme.MusictechTheme
-import com.example.ui.theme.SlateMidnight
 import com.example.ui.theme.WorkspaceBlue
 import com.example.ui.theme.WorkspaceGreen
 import com.example.ui.theme.WorkspaceRed
@@ -187,7 +187,7 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
     val durationMs by viewModel.durationMs.collectAsState()
     
     // Add song form trigger state
-    var showAddDialog by mutableStateOf(false)
+    var showAddDialog by remember { mutableStateOf(false) }
     
     // Settings dialog trigger state
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -373,7 +373,10 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
                                     .clip(CircleShape)
                                     .background(
                                         Brush.linearGradient(
-                                            colors = listOf(WorkspaceBlue, WorkspaceGreen)
+                                            colors = listOf(
+                                                currentTheme.accentColor,
+                                                currentTheme.accentColor.copy(alpha = 0.7f)
+                                            )
                                         )
                                     )
                                     .testTag("add_song_trigger_button")
@@ -394,9 +397,25 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         placeholder = { Text("Search songs or artists...", color = Color.White.copy(alpha = 0.5f)) },
-                        colors = textFieldColorsHelper(),
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.5f)) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Rounded.Close, contentDescription = "Clear Search", tint = Color.White.copy(alpha = 0.5f))
+                                }
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = currentTheme.accentColor,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.02f),
+                            cursorColor = currentTheme.accentColor,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -1589,9 +1608,9 @@ fun AddSongDialog(
 fun textFieldColorsHelper() = OutlinedTextFieldDefaults.colors(
     focusedTextColor = Color.White,
     unfocusedTextColor = Color.White,
-    focusedBorderColor = WorkspaceBlue,
+    focusedBorderColor = LocalAppTheme.current.accentColor,
     unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-    focusedLabelColor = WorkspaceBlue,
+    focusedLabelColor = LocalAppTheme.current.accentColor,
     unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
     focusedPlaceholderColor = Color.White.copy(alpha = 0.3f),
     unfocusedPlaceholderColor = Color.White.copy(alpha = 0.3f)

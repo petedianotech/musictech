@@ -28,15 +28,8 @@ jobs:
     - name: Build Release APK
       run: ./gradlew assembleRelease
 
-    - name: Generate Keystore & Sign APK
-      run: |
-        $ANDROID_HOME/build-tools/*/apksigner --version || true
-        keytool -genkey -v -keystore release.keystore -alias mykey -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
-        find $ANDROID_HOME/build-tools -name "apksigner" -type f | sort -r | head -n 1 | xargs -I {} {} sign --ks release.keystore --ks-pass pass:password123 --ks-key-alias mykey --key-pass pass:password123 app/build/outputs/apk/release/app-release-unsigned.apk
-        mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-signed.apk
-
     - name: Upload Signed APK
       uses: actions/upload-artifact@v4
       with:
         name: app-release
-        path: app/build/outputs/apk/release/app-release-signed.apk
+        path: app/build/outputs/apk/release/app-release.apk
