@@ -253,6 +253,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playNext() {
+        if (scheduledNextSong != null) {
+            val next = scheduledNextSong!!
+            scheduledNextSong = null
+            playSong(next)
+            return
+        }
         val list = allSongs.value
         if (list.isEmpty()) return
         val currentIndex = list.indexOfFirst { it.id == _currentSong.value?.id }
@@ -332,6 +338,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 loadSongInPlayer(updated, playWhenReady = _isPlaying.value)
             }
         }
+    }
+
+    fun updateLyrics(song: Song, newLyrics: String) {
+        viewModelScope.launch {
+            val updated = song.copy(lyrics = newLyrics)
+            repository.updateSong(updated)
+            if (_currentSong.value?.id == song.id) {
+                _currentSong.value = updated
+            }
+        }
+    }
+
+    // Since we don't have a real queue, we just simulate playNext by storing the song 
+    // to be played when current finishes (or skipped)
+    private var scheduledNextSong: Song? = null
+    
+    fun setNextSong(song: Song) {
+        scheduledNextSong = song
     }
 
     fun applyToSelection(songIds: Set<Int>, action: String, payload: String = "") {

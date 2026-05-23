@@ -57,9 +57,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FastForward
@@ -110,6 +113,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.db.Song
 import com.example.ui.theme.MusictechTheme
@@ -184,6 +188,8 @@ fun AppDrawerContent(
     onThemeChange: (AppTheme) -> Unit,
     closeDrawer: () -> Unit
 ) {
+    var showAboutDialog by remember { mutableStateOf(false) }
+
     ModalDrawerSheet(
         drawerContainerColor = currentTheme.surfaceColor,
         drawerContentColor = Color.White
@@ -224,14 +230,68 @@ fun AppDrawerContent(
         Spacer(Modifier.weight(1f))
         
         NavigationDrawerItem(
-            label = { Text("Settings") },
+            label = { Text("About / Settings") },
             selected = false,
-            onClick = { closeDrawer() }, // We could show settings dialog, but user asked to put theme switch in the drawer itself, which we did.
+            onClick = { 
+                showAboutDialog = true
+                closeDrawer()
+            },
             icon = { Icon(Icons.Default.Settings, contentDescription = null) },
             modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
             colors = NavigationDrawerItemDefaults.colors(unselectedTextColor = Color.White, unselectedIconColor = Color.White)
         )
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (showAboutDialog) {
+        val context = LocalContext.current
+        Dialog(onDismissRequest = { showAboutDialog = false }) {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = currentTheme.surfaceColor),
+                border = borderHelper(Color.White.copy(alpha = 0.15f)),
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Settings, contentDescription = null, tint = currentTheme.accentColor, modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("About MUSICTECH", color = Color.White, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("The app is free to use.", color = Color.White.copy(alpha = 0.8f))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Developed by Peter Damiano", color = Color.White)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://peterdamiano.vercel.app"))
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Web: peterdamiano.vercel.app", color = Color.White)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/PetedianoTech"))
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("GitHub: PetedianoTech", color = Color.White)
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { showAboutDialog = false },
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -338,6 +398,7 @@ fun MusicAppRoot() {
 
 @Composable
 fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onOpenDrawer: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     
     // Core database collections
     val allSongs by viewModel.allSongs.collectAsState()
@@ -366,6 +427,9 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onOpenDraw
     // Multi-select state
     var selectedSongIds by remember { mutableStateOf(setOf<Int>()) }
     var showBulkPlaylistDialog by remember { mutableStateOf(false) }
+    
+    // Now playing screen state
+    var showNowPlaying by remember { mutableStateOf(false) }
     
     // Sort logic
     val sortOption by viewModel.sortOption.collectAsState()
@@ -437,22 +501,6 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onOpenDraw
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     Spacer(modifier = Modifier.width(44.dp))
-                }
-            }
-
-            AnimatedVisibility(
-                visible = currentSong != null,
-                enter = slideInVertically(initialOffsetY = { -50 }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { -50 }) + fadeOut()
-            ) {
-                currentSong?.let { song ->
-                    HeadsUpNotificationBar(
-                        song = song,
-                        isPlaying = isPlaying,
-                        currentPos = currentPositionMs,
-                        duration = durationMs,
-                        onTogglePlay = { viewModel.togglePlayPause() }
-                    )
                 }
             }
             
@@ -693,7 +741,15 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onOpenDraw
                             },
                             onFavToggle = { viewModel.toggleFavorite(song) },
                             onDeleteClick = { songToDelete = song },
-                            onEditClick = { songToEdit = song }
+                            onEditClick = { songToEdit = song },
+                            onAddToPlaylistClick = {
+                                selectedSongIds = setOf(song.id)
+                                showBulkPlaylistDialog = true
+                            },
+                            onPlayNextClick = {
+                                viewModel.setNextSong(song)
+                                android.widget.Toast.makeText(context, "Added to Play Next", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         )
                     }
                 }
@@ -789,6 +845,47 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onOpenDraw
                     showBulkPlaylistDialog = false
                 }
             )
+        }
+
+        AnimatedVisibility(
+            visible = currentSong != null && !showNowPlaying && selectedSongIds.isEmpty(),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 20.dp, vertical = 16.dp)
+        ) {
+            currentSong?.let { song ->
+                HeadsUpNotificationBar(
+                    song = song,
+                    isPlaying = isPlaying,
+                    currentPos = currentPositionMs,
+                    duration = durationMs,
+                    onTogglePlay = { viewModel.togglePlayPause() },
+                    onClick = { showNowPlaying = true }
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showNowPlaying && currentSong != null,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier.fillMaxSize().zIndex(100f)
+        ) {
+            currentSong?.let { song ->
+                NowPlayingScreen(
+                    song = song,
+                    isPlaying = isPlaying,
+                    durationMs = durationMs,
+                    currentPositionMs = currentPositionMs,
+                    onSeek = { progress -> viewModel.seekTo(progress) },
+                    onPrev = { viewModel.playPrevious() },
+                    onTogglePlay = { viewModel.togglePlayPause() },
+                    onNext = { viewModel.playNext() },
+                    onFavToggle = { viewModel.toggleFavorite(song) },
+                    onClose = { showNowPlaying = false },
+                    onEditLyrics = { lyrics -> viewModel.updateLyrics(song, lyrics) }
+                )
+            }
         }
     }
 }
@@ -1119,7 +1216,8 @@ fun HeadsUpNotificationBar(
     isPlaying: Boolean,
     currentPos: Long,
     duration: Long,
-    onTogglePlay: () -> Unit
+    onTogglePlay: () -> Unit,
+    onClick: () -> Unit = {}
 ) {
     val progress = if (duration > 0) currentPos.toFloat() / duration.coerceAtLeast(1L) else 0f
     val themeColor = song.colorHex.toComposeColor()
@@ -1142,6 +1240,7 @@ fun HeadsUpNotificationBar(
             .clip(RoundedCornerShape(26.dp))
             .background(Color.White.copy(alpha = 0.05f))
             .border(width = 1.dp, color = Color.White.copy(alpha = 0.12f), shape = RoundedCornerShape(26.dp))
+            .clickable { onClick() }
             .testTag("status_notification_bar")
     ) {
         Column {
@@ -1544,6 +1643,117 @@ fun CoreVisualizerCard(
     }
 }
 
+@Composable
+fun NowPlayingScreen(
+    song: Song,
+    isPlaying: Boolean,
+    durationMs: Long,
+    currentPositionMs: Long,
+    onSeek: (Float) -> Unit,
+    onPrev: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onFavToggle: () -> Unit,
+    onClose: () -> Unit,
+    onEditLyrics: (String) -> Unit
+) {
+    val themeColor = song.colorHex.toComposeColor()
+    var showLyricsEdit by remember { mutableStateOf(false) }
+    var lyricsInput by remember { mutableStateOf(song.lyrics) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LocalAppTheme.current.bottomColor)
+            .statusBarsPadding()
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
+            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(32.dp))
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Text("Now Playing", style = MaterialTheme.typography.titleMedium.copy(color = Color.White, fontWeight = FontWeight.Bold))
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = { showLyricsEdit = true }) {
+                    Icon(Icons.Rounded.Edit, contentDescription = "Edit Lyrics", tint = Color.White)
+                }
+                IconButton(onClick = { 
+                    val intent = android.content.Intent(android.content.Intent.ACTION_WEB_SEARCH)
+                    intent.putExtra(android.app.SearchManager.QUERY, "${song.title} ${song.artist} lyrics")
+                    context.startActivity(intent)
+                }) {
+                    Icon(Icons.Default.Search, contentDescription = "Search Google", tint = Color.White)
+                }
+            }
+
+            // Scrollable Content
+            LazyColumn(
+                modifier = Modifier.weight(1f).padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                item { Spacer(modifier = Modifier.height(24.dp)) }
+                item {
+                    CoreVisualizerCard(
+                        song = song,
+                        isPlaying = isPlaying,
+                        durationMs = durationMs,
+                        currentPositionMs = currentPositionMs,
+                        onSeek = onSeek,
+                        onPrev = onPrev,
+                        onTogglePlay = onTogglePlay,
+                        onNext = onNext,
+                        onFavToggle = onFavToggle
+                    )
+                }
+                item { Spacer(modifier = Modifier.height(32.dp)) }
+                if (song.lyrics.isNotBlank()) {
+                    item {
+                        LyricsCard(song = song, currentPositionMs = currentPositionMs)
+                    }
+                }
+                item { Spacer(modifier = Modifier.height(48.dp)) }
+
+                // Volume slider placeholder or simple volume control
+                // For a real volume control we'd need an AudioManager
+                item {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.VolumeUp, contentDescription = null, tint = Color.White.copy(0.6f))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Volume Control via System Buttons", color = Color.White.copy(0.4f), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+
+        if (showLyricsEdit) {
+            Dialog(onDismissRequest = { showLyricsEdit = false }) {
+                Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = LocalAppTheme.current.surfaceColor), modifier = Modifier.fillMaxWidth().height(400.dp)) {
+                    Column(modifier = Modifier.padding(24.dp)) {
+                        Text("Edit Lyrics", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = lyricsInput,
+                            onValueChange = { lyricsInput = it },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                            placeholder = { Text("Paste lyrics here...") }
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                            Button(onClick = { showLyricsEdit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("Cancel") }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(onClick = { onEditLyrics(lyricsInput); showLyricsEdit = false }, colors = ButtonDefaults.buttonColors(containerColor = LocalAppTheme.current.accentColor)) { Text("Save") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SongGlassCard(
@@ -1556,7 +1766,9 @@ fun SongGlassCard(
     onLongPress: () -> Unit,
     onFavToggle: () -> Unit,
     onDeleteClick: () -> Unit,
-    onEditClick: () -> Unit
+    onEditClick: () -> Unit,
+    onAddToPlaylistClick: () -> Unit = {},
+    onPlayNextClick: () -> Unit = {}
 ) {
     val themeColor = song.colorHex.toComposeColor()
     val animatedStrokeColor by animateColorAsState(
@@ -1649,39 +1861,44 @@ fun SongGlassCard(
 
             Spacer(modifier = Modifier.width(6.dp))
             
-            // Edit track details
-            IconButton(
-                onClick = onEditClick,
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.1f))
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Edit,
-                    contentDescription = "Edit track",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            // Crucial requested DELETE button (In beautiful theme-aligned Workspace red outline/accent)
-            IconButton(
-                onClick = onDeleteClick,
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(WorkspaceRed.copy(alpha = 0.1f))
-                    .testTag("list_item_delete_button_${song.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete track icon",
-                    tint = WorkspaceRed,
-                    modifier = Modifier.size(16.dp)
-                )
+            var showMenu by remember { mutableStateOf(false) }
+            
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.05f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Play Next") },
+                        onClick = { onPlayNextClick(); showMenu = false }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Add to Playlist") },
+                        onClick = { onAddToPlaylistClick(); showMenu = false }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Edit Details") },
+                        onClick = { onEditClick(); showMenu = false }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Delete", color = WorkspaceRed) },
+                        onClick = { onDeleteClick(); showMenu = false }
+                    )
+                }
             }
         }
     }
