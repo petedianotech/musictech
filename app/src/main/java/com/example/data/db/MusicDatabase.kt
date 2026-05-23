@@ -19,7 +19,7 @@ abstract class MusicDatabase : RoomDatabase() {
                     context.applicationContext,
                     MusicDatabase::class.java,
                     "musictech_db"
-                ).fallbackToDestructiveMigration()
+                ).fallbackToDestructiveMigration(true)
                  .build()
                 INSTANCE = instance
                 instance

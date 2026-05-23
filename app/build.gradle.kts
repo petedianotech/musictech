@@ -21,8 +21,9 @@ android {
 
     signingConfigs {
         create("release") {
-            // Using debug keystore for proof-of-concept signed release APK
-            storeFile = file("../debug.keystore")
+            // Using debug keystore (local or generated in CI) for signed release APK
+            val keystoreFile = rootProject.file("debug.keystore")
+            storeFile = keystoreFile
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
