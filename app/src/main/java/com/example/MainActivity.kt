@@ -2,6 +2,13 @@ package com.example
 
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.Manifest
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,6 +31,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,10 +56,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Pause
@@ -60,6 +70,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -161,18 +179,165 @@ enum class AppTheme(val displayName: String, val midColor: Color, val bottomColo
 val LocalAppTheme = androidx.compose.runtime.compositionLocalOf { AppTheme.MIDNIGHT }
 
 @Composable
-fun MusicAppRoot() {
-    val viewModel: MusicViewModel = viewModel()
-    
-    var currentTheme by remember { mutableStateOf(AppTheme.MIDNIGHT) }
-    
-    androidx.compose.runtime.CompositionLocalProvider(LocalAppTheme provides currentTheme) {
-        MusicAppScreen(viewModel = viewModel, currentTheme = currentTheme, onThemeChange = { currentTheme = it })
+fun AppDrawerContent(
+    currentTheme: AppTheme,
+    onThemeChange: (AppTheme) -> Unit,
+    closeDrawer: () -> Unit
+) {
+    ModalDrawerSheet(
+        drawerContainerColor = currentTheme.surfaceColor,
+        drawerContentColor = Color.White
+    ) {
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "MUSICTECH",
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = currentTheme.accentColor)
+        )
+        Spacer(Modifier.height(16.dp))
+        
+        Text(
+            "Theme",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleSmall.copy(color = Color.White.copy(alpha = 0.5f))
+        )
+        
+        AppTheme.values().forEach { theme ->
+            val isSelected = currentTheme == theme
+            NavigationDrawerItem(
+                label = { Text(theme.displayName) },
+                selected = isSelected,
+                onClick = { 
+                    onThemeChange(theme)
+                    closeDrawer()
+                },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                colors = NavigationDrawerItemDefaults.colors(
+                    selectedContainerColor = theme.accentColor.copy(alpha = 0.2f),
+                    unselectedContainerColor = Color.Transparent,
+                    selectedTextColor = theme.accentColor,
+                    unselectedTextColor = Color.White
+                )
+            )
+        }
+        
+        Spacer(Modifier.weight(1f))
+        
+        NavigationDrawerItem(
+            label = { Text("Settings") },
+            selected = false,
+            onClick = { closeDrawer() }, // We could show settings dialog, but user asked to put theme switch in the drawer itself, which we did.
+            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+            colors = NavigationDrawerItemDefaults.colors(unselectedTextColor = Color.White, unselectedIconColor = Color.White)
+        )
+        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeChange: (AppTheme) -> Unit) {
+fun MusicAppRoot() {
+    var currentTheme by remember { mutableStateOf(AppTheme.MIDNIGHT) }
+
+    val context = LocalContext.current
+    var hasPermission by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasPermission = isGranted
+        if (!isGranted) {
+            Toast.makeText(context, "Storage permission is required to load local music files.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        val isGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            permission
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (isGranted) {
+            hasPermission = true
+        } else {
+            permissionLauncher.launch(permission)
+        }
+    }
+    
+    androidx.compose.runtime.CompositionLocalProvider(LocalAppTheme provides currentTheme) {
+        if (hasPermission) {
+            val viewModel: MusicViewModel = viewModel()
+            val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+            val scope = rememberCoroutineScope()
+            
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    AppDrawerContent(currentTheme, onThemeChange = { currentTheme = it }) {
+                        scope.launch { drawerState.close() }
+                    }
+                }
+            ) {
+                MusicAppScreen(
+                    viewModel = viewModel, 
+                    currentTheme = currentTheme, 
+                    onOpenDrawer = { scope.launch { drawerState.open() } }
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(currentTheme.midColor)
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = "Music",
+                        tint = currentTheme.accentColor,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Storage Permission Required",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = Color.White),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "To find and play all music files on your device seamlessly, we need access to your local media.",
+                        style = MaterialTheme.typography.bodyMedium.copy(color = Color.White.copy(alpha = 0.7f)),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Button(
+                        onClick = { 
+                            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                Manifest.permission.READ_MEDIA_AUDIO
+                            } else {
+                                Manifest.permission.READ_EXTERNAL_STORAGE
+                            }
+                            permissionLauncher.launch(permission) 
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor)
+                    ) {
+                        Text("Grant Permission", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onOpenDrawer: () -> Unit) {
     
     // Core database collections
     val allSongs by viewModel.allSongs.collectAsState()
@@ -189,15 +354,22 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
     // Add song form trigger state
     var showAddDialog by remember { mutableStateOf(false) }
     
-    // Settings dialog trigger state
-    var showSettingsDialog by remember { mutableStateOf(false) }
-    
     // Search query state
     var searchQuery by remember { mutableStateOf("") }
     
     // Deletion confirmation trigger state
     var songToDelete by remember { mutableStateOf<Song?>(null) }
     
+    // Edit details trigger state
+    var songToEdit by remember { mutableStateOf<Song?>(null) }
+    
+    // Multi-select state
+    var selectedSongIds by remember { mutableStateOf(setOf<Int>()) }
+    var showBulkPlaylistDialog by remember { mutableStateOf(false) }
+    
+    // Sort logic
+    val sortOption by viewModel.sortOption.collectAsState()
+
     // Dynamic theme background blending
     val activeColor = currentSong?.colorHex?.toComposeColor() ?: WorkspaceBlue
     val animatedBgColor by animateColorAsState(
@@ -206,9 +378,16 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
         label = "DynamicAmbientColor"
     )
 
-    val filteredSongs = remember(allSongs, searchQuery) {
-        if (searchQuery.isBlank()) allSongs
+    val filteredSongs = remember(allSongs, searchQuery, sortOption) {
+        val filtered = if (searchQuery.isBlank()) allSongs
         else allSongs.filter { it.title.contains(searchQuery, ignoreCase = true) || it.artist.contains(searchQuery, ignoreCase = true) }
+        
+        when (sortOption) {
+            "TITLE" -> filtered.sortedBy { it.title.lowercase() }
+            "ARTIST" -> filtered.sortedBy { it.artist.lowercase() }
+            "DURATION" -> filtered.sortedByDescending { it.durationMs }
+            else -> filtered.sortedByDescending { it.id } // RECENT (default by id since it's auto-generated)
+        }
     }
 
     Box(
@@ -232,8 +411,35 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             
-            // ________________ HEADER REGION & HEADS-UP MINI NOTIFICATION BAR ________________
-            Spacer(modifier = Modifier.height(16.dp))
+            // ________________ TOP NAVIGATION / HEADER REGION ________________
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onOpenDrawer,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.1f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Open Menu",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                if (currentSong == null) {
+                    Text(
+                        "MUSICTECH",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Color.White)
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.width(44.dp))
+                }
+            }
+
             AnimatedVisibility(
                 visible = currentSong != null,
                 enter = slideInVertically(initialOffsetY = { -50 }) + fadeIn(),
@@ -348,21 +554,39 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
                             )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Settings button
-                            IconButton(
-                                onClick = { showSettingsDialog = true },
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.1f))
-                                    .testTag("settings_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "Settings",
-                                    tint = Color.White
-                                )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            var showSortMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(
+                                    onClick = { showSortMenu = true },
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.1f))
+                                ) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Sort", tint = Color.White)
+                                }
+                                androidx.compose.material3.DropdownMenu(
+                                    expanded = showSortMenu,
+                                    onDismissRequest = { showSortMenu = false }
+                                ) {
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Recent") },
+                                        onClick = { viewModel.setSortOption("RECENT"); showSortMenu = false }
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Title") },
+                                        onClick = { viewModel.setSortOption("TITLE"); showSortMenu = false }
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Artist") },
+                                        onClick = { viewModel.setSortOption("ARTIST"); showSortMenu = false }
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Duration") },
+                                        onClick = { viewModel.setSortOption("DURATION"); showSortMenu = false }
+                                    )
+                                }
                             }
                             
                             // Add track button triggering modal
@@ -438,7 +662,7 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (allSongs.isEmpty()) "No songs added yet.\nTap '+' above to preload beats!" else "No results found for '$searchQuery'",
+                                    text = if (allSongs.isEmpty()) "No local music found." else "No results found for '$searchQuery'",
                                     color = Color.White.copy(alpha = 0.4f),
                                     textAlign = TextAlign.Center,
                                     lineHeight = 20.sp
@@ -448,14 +672,72 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
                     }
                 } else {
                     items(filteredSongs) { song ->
+                        val isSelected = selectedSongIds.contains(song.id)
+                        val isSelectionMode = selectedSongIds.isNotEmpty()
+                        
                         SongGlassCard(
                             song = song,
                             isActive = currentSong?.id == song.id,
                             isPlaying = isPlaying && currentSong?.id == song.id,
-                            onPlayClick = { viewModel.playSong(song) },
+                            isSelected = isSelected,
+                            isSelectionMode = isSelectionMode,
+                            onPlayClick = { 
+                                if (isSelectionMode) {
+                                    selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
+                                } else {
+                                    viewModel.playSong(song)
+                                }
+                            },
+                            onLongPress = {
+                                selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
+                            },
                             onFavToggle = { viewModel.toggleFavorite(song) },
-                            onDeleteClick = { songToDelete = song }
+                            onDeleteClick = { songToDelete = song },
+                            onEditClick = { songToEdit = song }
                         )
+                    }
+                }
+            }
+        }
+
+        // ________________ CONTEXTUAL ACTION BAR ________________
+        AnimatedVisibility(
+            visible = selectedSongIds.isNotEmpty(),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = WorkspaceBlue),
+                elevation = CardDefaults.cardElevation(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${selectedSongIds.size} Selected",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row {
+                        IconButton(onClick = { viewModel.applyToSelection(selectedSongIds, "FAVORITE"); selectedSongIds = emptySet() }) {
+                            Icon(Icons.Default.Favorite, contentDescription = "Favorite All", tint = Color.White)
+                        }
+                        IconButton(onClick = { showBulkPlaylistDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add to Playlist", tint = Color.White)
+                        }
+                        IconButton(onClick = { viewModel.applyToSelection(selectedSongIds, "DELETE"); selectedSongIds = emptySet() }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete All", tint = Color.White)
+                        }
+                        IconButton(onClick = { selectedSongIds = emptySet() }) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Clear Selection", tint = Color.White)
+                        }
                     }
                 }
             }
@@ -474,16 +756,7 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
             )
         }
 
-        // Settings Dialog
-        if (showSettingsDialog) {
-            SettingsDialog(
-                currentTheme = currentTheme,
-                onThemeChange = onThemeChange,
-                onDismiss = { showSettingsDialog = false }
-            )
-        }
-
-        // Deletion confirmation trigger state (To satisfy the "add delete songs button" securely)
+        // Deletion confirmation trigger state
         songToDelete?.let { song ->
             DeleteConfirmationDialog(
                 song = song,
@@ -494,106 +767,100 @@ fun MusicAppScreen(viewModel: MusicViewModel, currentTheme: AppTheme, onThemeCha
                 }
             )
         }
+
+        // Edit details trigger state
+        songToEdit?.let { song ->
+            EditSongDialog(
+                song = song,
+                onDismiss = { songToEdit = null },
+                onSave = { newTitle, newArtist, newPlaylist ->
+                    viewModel.updateSongDetails(song, newTitle, newArtist, newPlaylist)
+                    songToEdit = null
+                }
+            )
+        }
+
+        if (showBulkPlaylistDialog) {
+            BulkPlaylistDialog(
+                onDismiss = { showBulkPlaylistDialog = false },
+                onSave = { playlistName ->
+                    viewModel.applyToSelection(selectedSongIds, "PLAYLIST", playlistName)
+                    selectedSongIds = emptySet()
+                    showBulkPlaylistDialog = false
+                }
+            )
+        }
     }
 }
 
 @Composable
-fun SettingsDialog(currentTheme: AppTheme, onThemeChange: (AppTheme) -> Unit, onDismiss: () -> Unit) {
+fun EditSongDialog(
+    song: Song,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit
+) {
+    var title by remember { mutableStateOf(song.title) }
+    var artist by remember { mutableStateOf(song.artist) }
+    var playlist by remember { mutableStateOf(song.genre) }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(4.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = currentTheme.surfaceColor
-            ),
-            border = borderHelper(Color.White.copy(alpha = 0.12f))
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = LocalAppTheme.current.surfaceColor),
+            border = borderHelper(Color.White.copy(alpha = 0.15f))
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Settings",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White
-                        )
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Close Settings",
-                            tint = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-                }
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Edit Track", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(16.dp))
-
-                Text("App Theme", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 16.dp)
-                ) {
-                    items(AppTheme.values()) { theme ->
-                        val isSelected = currentTheme == theme
-                        Box(
-                            modifier = Modifier
-                                .clickable { onThemeChange(theme) }
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) Color.White.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
-                                .border(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.1f),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = theme.displayName,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = Color.White
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // App version
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("App Version", color = Color.White)
-                    Text("1.0.0", color = Color.White.copy(alpha = 0.5f))
-                }
-
-                // Audio Quality (Mock)
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Streaming Quality", color = Color.White)
-                    Text("High", color = currentTheme.accentColor)
-                }
-
+                OutlinedTextField(
+                    value = title, onValueChange = { title = it }, label = { Text("Title") },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = artist, onValueChange = { artist = it }, label = { Text("Artist") },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = playlist, onValueChange = { playlist = it }, label = { Text("Playlist Name") },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                )
                 Spacer(modifier = Modifier.height(24.dp))
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor)
-                ) {
-                    Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = onDismiss, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("Cancel") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = { onSave(title, artist, playlist) }, colors = ButtonDefaults.buttonColors(containerColor = LocalAppTheme.current.accentColor)) { Text("Save") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BulkPlaylistDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var playlist by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = LocalAppTheme.current.surfaceColor),
+            border = borderHelper(Color.White.copy(alpha = 0.15f))
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Add to Playlist", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = playlist, onValueChange = { playlist = it }, label = { Text("Playlist Name") },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = onDismiss, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("Cancel") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = { onSave(playlist) }, colors = ButtonDefaults.buttonColors(containerColor = LocalAppTheme.current.accentColor)) { Text("Save") }
                 }
             }
         }
@@ -1277,36 +1544,43 @@ fun CoreVisualizerCard(
     }
 }
 
-// Gorgeous glassmorphic list row representing songs
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SongGlassCard(
     song: Song,
     isActive: Boolean,
     isPlaying: Boolean,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     onPlayClick: () -> Unit,
+    onLongPress: () -> Unit,
     onFavToggle: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onEditClick: () -> Unit
 ) {
     val themeColor = song.colorHex.toComposeColor()
     val animatedStrokeColor by animateColorAsState(
-        targetValue = if (isActive) themeColor else Color.White.copy(alpha = 0.06f),
+        targetValue = if (isSelected) WorkspaceRed else if (isActive) themeColor else Color.White.copy(alpha = 0.06f),
         label = "CardBorderColor"
     )
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onPlayClick() }
             .testTag("song_item_card_${song.id}"),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isActive) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.03f)
+            containerColor = if (isSelected) WorkspaceRed.copy(alpha = 0.15f) else if (isActive) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.03f)
         ),
         border = borderHelper(animatedStrokeColor)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onPlayClick,
+                    onLongClick = onLongPress
+                )
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1345,7 +1619,7 @@ fun SongGlassCard(
                     text = song.title,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = FontWeight.Bold,
-                        color = if (isActive) themeColor else Color.White
+                        color = if (isActive || isSelected) themeColor else Color.White
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1370,6 +1644,24 @@ fun SongGlassCard(
                     contentDescription = "Favorite track icon button",
                     tint = if (song.isFavorite) WorkspaceRed else Color.White.copy(alpha = 0.4f),
                     modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+            
+            // Edit track details
+            IconButton(
+                onClick = onEditClick,
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.1f))
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = "Edit track",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
                 )
             }
 

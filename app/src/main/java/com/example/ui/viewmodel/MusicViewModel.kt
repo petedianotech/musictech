@@ -67,7 +67,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
-    // Smart playlists generic map (Genre -> List of Songs)
+    // Group by Genre (acts as Playlists)
     val smartPlaylists: StateFlow<Map<String, List<Song>>> = repository.allSongs
         .map { songs -> songs.groupBy { it.genre } }
         .stateIn(
@@ -75,6 +75,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyMap()
         )
+
+    private val _sortOption = MutableStateFlow("RECENT")
+    val sortOption: StateFlow<String> = _sortOption.asStateFlow()
+
+    fun setSortOption(option: String) {
+        _sortOption.value = option
+    }
 
     private var progressUpdateJob: Job? = null
 
@@ -86,7 +93,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.allSongs.collect { list ->
                 if (list.isEmpty()) {
-                    prepopulateDefaultSongs()
+                    loadLocalMusicFiles()
                 } else if (_currentSong.value == null) {
                     // Set the first song as default current if none selected
                     _currentSong.value = list.firstOrNull()
@@ -129,54 +136,66 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun prepopulateDefaultSongs() {
+    private fun loadLocalMusicFiles() {
         viewModelScope.launch {
-            // Google Workspace theme colors aligned items
-            val defaultTracks = listOf(
-                Song(
-                    title = "Azure Workspace",
-                    artist = "Waveform Core",
-                    uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-                    durationMs = 372000,
-                    genre = "Docs Ambient",
-                    colorHex = "#4285F4", // Workspace Blue
-                    lyrics = "0|Welcome to Azure Workspace\n5000|A soothing ambient soundscape\n10000|Focus and create\n15000|Let the ideas flow\n20000|Uninterrupted productivity\n40000|Feel the groove",
-                    albumArtUrl = "https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=600&h=600&fit=crop"
-                ),
-                Song(
-                    title = "Emerald Sheets",
-                    artist = "Chilledge",
-                    uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-                    durationMs = 423000,
-                    genre = "Docs Ambient",
-                    colorHex = "#0F9D58", // Workspace Green
-                    lyrics = "0|Entering the Emerald Sheets\n8000|Calculate your dreams\n16000|Data flows like a river\n24000|Structured and aligned\n32000|Harmony in logic",
-                    albumArtUrl = "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=600&h=600&fit=crop"
-                ),
-                Song(
-                    title = "Solar Keynote",
-                    artist = "Golden Horizon",
-                    uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
-                    durationMs = 302000,
-                    genre = "Slides Acoustic",
-                    colorHex = "#F4B400", // Workspace Yellow
-                    lyrics = "0|Presenting Solar Keynote\n10000|Transitions fade in\n20000|Bright ideas illuminated\n30000|Captivate the audience",
-                    albumArtUrl = "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=600&h=600&fit=crop"
-                ),
-                Song(
-                    title = "Crimson Drive",
-                    artist = "Neon Matrix",
-                    uriOrUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3",
-                    durationMs = 318000,
-                    genre = "Drive Synth",
-                    colorHex = "#DB4437", // Workspace Red
-                    lyrics = "0|Welcome to the Crimson Drive\n6000|High octane storage\n12000|Secure and fast\n18000|Racing through the cloud\n24000|Limitless capacity",
-                    albumArtUrl = "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&h=600&fit=crop"
+            try {
+                val contentResolver = getApplication<Application>().contentResolver
+                val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                val projection = arrayOf(
+                    android.provider.MediaStore.Audio.Media._ID,
+                    android.provider.MediaStore.Audio.Media.TITLE,
+                    android.provider.MediaStore.Audio.Media.ARTIST,
+                    android.provider.MediaStore.Audio.Media.DATA,
+                    android.provider.MediaStore.Audio.Media.DURATION,
+                    android.provider.MediaStore.Audio.Media.ALBUM_ID
                 )
-            )
+                
+                val selection = "${android.provider.MediaStore.Audio.Media.IS_MUSIC} != 0"
+                
+                val cursor = contentResolver.query(uri, projection, selection, null, null)
+                
+                cursor?.use {
+                    val idColumn = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID)
+                    val titleColumn = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.TITLE)
+                    val artistColumn = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.ARTIST)
+                    val dataColumn = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)
+                    val durationColumn = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DURATION)
+                    val albumIdColumn = it.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.ALBUM_ID)
+                    
+                    while (it.moveToNext()) {
+                        val id = it.getLong(idColumn)
+                        val title = it.getString(titleColumn) ?: "Unknown"
+                        val artist = it.getString(artistColumn) ?: "Unknown"
+                        val duration = it.getLong(durationColumn)
+                        val albumId = it.getLong(albumIdColumn)
+                        
+                        val uriStr = android.content.ContentUris.withAppendedId(
+                            android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id
+                        ).toString()
+                        
+                        val albumArtUri = android.content.ContentUris.withAppendedId(
+                            android.net.Uri.parse("content://media/external/audio/albumart"),
+                            albumId
+                        ).toString()
 
-            for (track in defaultTracks) {
-                repository.insertSong(track)
+                        val colorHex = arrayOf("#4285F4", "#0F9D58", "#F4B400", "#DB4437").random()
+
+                        val newSong = Song(
+                            title = title,
+                            artist = artist,
+                            uriOrUrl = uriStr,
+                            durationMs = duration,
+                            genre = "Local Device",
+                            colorHex = colorHex,
+                            lyrics = "",
+                            albumArtUrl = albumArtUri
+                        )
+                        
+                        repository.insertSong(newSong)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -300,6 +319,41 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             repository.updateSong(updatedSong)
             if (_currentSong.value?.id == song.id) {
                 _currentSong.value = updatedSong
+            }
+        }
+    }
+
+    fun updateSongDetails(song: Song, newTitle: String, newArtist: String, newPlaylist: String) {
+        viewModelScope.launch {
+            val updated = song.copy(title = newTitle, artist = newArtist, genre = newPlaylist.ifBlank { song.genre })
+            repository.updateSong(updated)
+            if (_currentSong.value?.id == song.id) {
+                _currentSong.value = updated
+                loadSongInPlayer(updated, playWhenReady = _isPlaying.value)
+            }
+        }
+    }
+
+    fun applyToSelection(songIds: Set<Int>, action: String, payload: String = "") {
+        viewModelScope.launch {
+            val songsToUpdate = allSongs.value.filter { it.id in songIds }
+            for (song in songsToUpdate) {
+                when (action) {
+                    "PLAYLIST" -> {
+                        val updated = song.copy(genre = payload.ifBlank { song.genre })
+                        repository.updateSong(updated)
+                    }
+                    "FAVORITE" -> {
+                        val updated = song.copy(isFavorite = true)
+                        repository.updateSong(updated)
+                    }
+                    "DELETE" -> {
+                        if (_currentSong.value?.id == song.id) {
+                            playNext()
+                        }
+                        repository.deleteSong(song)
+                    }
+                }
             }
         }
     }
